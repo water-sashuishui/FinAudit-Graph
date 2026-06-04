@@ -7,6 +7,7 @@ from uuid import uuid4
 from .automation import build_n8n_payload, send_to_n8n
 from .knowledge import AUDIT_STANDARD_PATH, retrieve_audit_standards
 from .reporting import build_full_report_markdown, save_reports
+from .security import inspect_document_security
 from .settings import ProjectSettings
 from .vector_store import DEFAULT_VECTOR_STORE_PATH, LocalVectorStore
 from .workflow import run_demo
@@ -23,8 +24,28 @@ def execute_audit(
 ) -> dict[str, Any]:
     """Run the end-to-end audit workflow and normalize the result shape."""
     normalized_path = validate_document_path(document_path)
+    security_result = inspect_document_security(normalized_path)
+
+    if security_result["blocked"]:
+        return {
+            "request_id": request_id or uuid4().hex,
+            "status": "blocked_for_review",
+            "document_path": str(normalized_path),
+            "parsed_financial_data": {},
+            "related_parties": [],
+            "audit_risks": [],
+            "negotiation_trace": [],
+            "llm_provider": "",
+            "final_report_markdown": "",
+            "n8n_result": {"sent": False, "mode": "blocked"},
+            "warnings": [
+                "Prompt injection risk detected. Automatic audit was blocked for manual review.",
+            ],
+            "security_flags": security_result,
+        }
+
     workflow_state = run_demo(str(normalized_path))
-    warnings = collect_warnings(workflow_state)
+    warnings = collect_warnings(workflow_state, security_result)
     report = build_full_report_markdown(workflow_state)
     n8n_result = send_to_n8n(build_n8n_payload(workflow_state))
 
@@ -40,6 +61,7 @@ def execute_audit(
         "final_report_markdown": report,
         "n8n_result": n8n_result,
         "warnings": warnings,
+        "security_flags": security_result,
     }
     if save_report:
         result["report_paths"] = save_reports(workflow_state, output_dir=output_dir)
@@ -107,7 +129,7 @@ def build_config_status(settings: ProjectSettings | None = None) -> dict[str, An
     }
 
 
-def collect_warnings(workflow_state: dict[str, Any]) -> list[str]:
+def collect_warnings(workflow_state: dict[str, Any], security_result: dict[str, Any]) -> list[str]:
     warnings: list[str] = []
     parsed = workflow_state.get("parsed_financial_data", {})
     if workflow_state.get("error_message"):
@@ -118,4 +140,6 @@ def collect_warnings(workflow_state: dict[str, Any]) -> list[str]:
         warnings.append("No related-party clues were found in the current graph source.")
     if not workflow_state.get("audit_risks_found"):
         warnings.append("No audit risks were identified by the current workflow.")
+    if security_result.get("pii_redactions"):
+        warnings.append("Sensitive fields were detected and masked before model-facing processing.")
     return warnings

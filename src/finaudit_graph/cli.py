@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import json
 
+from .eval import run_eval
 from .lora import inspect_lora_artifact
 from .service import execute_audit, query_audit_standards, rebuild_rag_index
 from .settings import ProjectSettings
@@ -40,6 +41,16 @@ def main() -> None:
         "--rag-query",
         help="Search the local audit-standard vector database with a natural-language query.",
     )
+    parser.add_argument(
+        "--run-eval",
+        action="store_true",
+        help="Run the local evaluation dataset and print metrics.",
+    )
+    parser.add_argument(
+        "--eval-dataset",
+        default="showcase/eval_dataset.json",
+        help="Path to the local evaluation dataset JSON file.",
+    )
     args = parser.parse_args()
 
     settings = ProjectSettings.from_env()
@@ -53,6 +64,10 @@ def main() -> None:
 
     if args.rag_query:
         print(json.dumps(query_audit_standards(args.rag_query, limit=5), ensure_ascii=False, indent=2))
+        return
+
+    if args.run_eval:
+        print(json.dumps(run_eval(args.eval_dataset), ensure_ascii=False, indent=2))
         return
 
     if args.demo:
