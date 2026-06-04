@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from typing import Any
 
+# 本模块不负责训练 LoRA，而是负责“读取并解释训练产物”，
+# 方便 CLI、README 和答辩材料快速说明当前微调成果的状态。
 
 REQUIRED_LORA_FILES = {
     "adapter_model.safetensors",
@@ -23,7 +25,7 @@ def _count_jsonl(path: Path) -> int:
         return sum(1 for line in handle if line.strip())
 
 
-def inspect_lora_artifact(artifact_dir: str | Path = "model_artifacts/lora_adapter") -> dict[str, Any]:
+def inspect_lora_artifact(artifact_dir: str | Path = "showcase/lora_adapter") -> dict[str, Any]:
     """Summarize the exported LoRA adapter in a presentation-friendly shape."""
     artifact_path = Path(artifact_dir)
     if not artifact_path.exists():
@@ -38,6 +40,7 @@ def inspect_lora_artifact(artifact_dir: str | Path = "model_artifacts/lora_adapt
     metadata = _read_json(summary_path) if summary_path.exists() else {}
 
     sft_path = artifact_path / "audit_risk_sft_from_labelstudio_80.jsonl"
+    # 优先读取整理后的摘要元数据；若缺失，再退回到原始训练文件估算。
     train_samples = int(metadata.get("train_samples") or _count_jsonl(sft_path))
     train_loss = train_results.get("train_loss")
 

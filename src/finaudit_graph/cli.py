@@ -4,11 +4,8 @@ import argparse
 import json
 
 from .lora import inspect_lora_artifact
+from .service import execute_audit, query_audit_standards, rebuild_rag_index
 from .settings import ProjectSettings
-from .reporting import build_full_report_markdown, save_reports
-from .workflow import run_demo
-from .knowledge import AUDIT_STANDARD_PATH, retrieve_audit_standards
-from .vector_store import DEFAULT_VECTOR_STORE_PATH, LocalVectorStore
 
 
 def main() -> None:
@@ -21,7 +18,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--document",
-        default="data/raw/demo_annual_report.pdf",
+        default="showcase/demo_inputs/test_audit.txt",
         help="Path to a source audit document used by the demo workflow.",
     )
     parser.add_argument(
@@ -51,35 +48,23 @@ def main() -> None:
         return
 
     if args.build_rag_index:
-        records = LocalVectorStore(DEFAULT_VECTOR_STORE_PATH).build_from_json(AUDIT_STANDARD_PATH)
-        print(
-            json.dumps(
-                {
-                    "vector_store": str(DEFAULT_VECTOR_STORE_PATH),
-                    "vector_db": "chroma",
-                    "embedding_model": "local_hashing_v1",
-                    "records": len(records),
-                },
-                ensure_ascii=False,
-                indent=2,
-            )
-        )
+        print(json.dumps(rebuild_rag_index(), ensure_ascii=False, indent=2))
         return
 
     if args.rag_query:
-        print(json.dumps(retrieve_audit_standards([args.rag_query], limit=5), ensure_ascii=False, indent=2))
+        print(json.dumps(query_audit_standards(args.rag_query, limit=5), ensure_ascii=False, indent=2))
         return
 
     if args.demo:
-        result = run_demo(args.document)
-        print(build_full_report_markdown(result))
-        if args.save_report:
-            paths = save_reports(result)
+        result = execute_audit(args.document, save_report=args.save_report)
+        print(result["final_report_markdown"])
+        if args.save_report and "report_paths" in result:
+            paths = result["report_paths"]
             print(f"Saved Markdown report: {paths['markdown']}")
             if paths["docx"]:
                 print(f"Saved DOCX report: {paths['docx']}")
         return
 
-    print("FinAudit-Graph Day 1 project scaffold is ready.")
+    print("FinAudit-Graph local tooling is ready.")
     print(f"Neo4j URI: {settings.neo4j_uri}")
     print("Next step: run `python -m finaudit_graph --demo` to test the workflow.")

@@ -87,6 +87,7 @@ def read_document_text(path: str | Path) -> str:
         return "\n".join(paragraph.text for paragraph in document.paragraphs)
 
     if suffix in SPREADSHEET_SUFFIXES:
+        # 表格文件先展开为单元格，再转成统一文本视图，便于后面的规则复用。
         return spreadsheet_cells_to_text(read_spreadsheet_cells(document_path))
 
     return ""
@@ -121,6 +122,7 @@ def _extract_company(text: str) -> str | None:
 
 
 def read_spreadsheet_cells(path: str | Path) -> list[dict[str, Any]]:
+    # 不同表格格式统一转成 sheet / row / col / value 四元组，后面语义对齐只关心这一层。
     spreadsheet_path = Path(path)
     suffix = spreadsheet_path.suffix.lower()
     if suffix == ".csv":
@@ -273,6 +275,7 @@ def semantically_align_financial_fields(cells: list[dict[str, Any]]) -> tuple[di
             label = str(cell["value"])
             if not label_matches_alias(label, aliases):
                 continue
+            # 先尝试从当前单元格直接抽值；抽不到再向右/向下找相邻单元格。
             candidate = extract_value_for_field(field, label)
             source_cell = cell
             if candidate is None:
@@ -305,6 +308,7 @@ def find_neighbor_value(
     label_cell: dict[str, Any],
     cell_map: dict[tuple[str, int, int], dict[str, Any]],
 ) -> tuple[Any | None, dict[str, Any]]:
+    # 这里优先搜索“右侧一格、下方一格”等常见财务表布局，避免做过重的表格推理。
     offsets = [(0, 1), (1, 0), (0, 2), (2, 0), (0, 3), (3, 0), (1, 1)]
     for row_delta, col_delta in offsets:
         candidate_cell = cell_map.get(
@@ -363,6 +367,7 @@ def parse_financial_document(path: str | Path) -> dict[str, Any]:
         return parsed
 
     if document_path.suffix.lower() in SPREADSHEET_SUFFIXES:
+        # Excel / CSV 优先走语义对齐，比纯文本正则更适合真实财务表。
         aligned, evidence = semantically_align_financial_fields(read_spreadsheet_cells(document_path))
         if aligned:
             parsed.update(aligned)

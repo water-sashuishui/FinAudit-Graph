@@ -6,6 +6,7 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+.vscode/
 .env
 .env.*
 !.env.example
@@ -13,7 +14,10 @@ data/raw/*
 !data/raw/.gitkeep
 data/processed/*
 !data/processed/.gitkeep
+data/rag/chroma_db/
 outputs/*
 !outputs/.gitkeep
+archive/
+archive/project_cleanup_2026-06-04/outputs/streamlit*.log
 rendered_plan/
 ~$*.docx

@@ -7,6 +7,9 @@ from typing import Any
 from .settings import ProjectSettings
 from .vector_store import DEFAULT_VECTOR_STORE_PATH, LocalVectorStore
 
+# 本模块负责两类“知识检索”：
+# 1. 关联方图谱线索：优先 Neo4j，失败时回退到本地 JSON。
+# 2. 审计准则检索：优先 Chroma 向量检索，失败时回退关键词匹配。
 
 GRAPH_SAMPLE_PATH = Path("data/graph/related_parties.json")
 AUDIT_STANDARD_PATH = Path("data/rag/audit_standards.json")

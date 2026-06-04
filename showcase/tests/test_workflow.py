@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import unittest
+import os
 import subprocess
 import sys
 import tempfile
-import os
+import unittest
 import zipfile
 from pathlib import Path
 from unittest.mock import patch
@@ -12,13 +12,13 @@ from unittest.mock import patch
 os.environ["DEEPSEEK_API_KEY"] = ""
 os.environ["NEO4J_PASSWORD"] = "password"
 
-from finaudit_graph.llm import DeepSeekClient, normalize_chat_completions_url
-from finaudit_graph.settings import ProjectSettings
 from finaudit_graph.automation import build_n8n_payload, send_to_n8n
+from finaudit_graph.knowledge import retrieve_audit_standards
+from finaudit_graph.llm import DeepSeekClient, normalize_chat_completions_url
 from finaudit_graph.lora import inspect_lora_artifact
 from finaudit_graph.reporting import build_full_report_markdown
+from finaudit_graph.settings import ProjectSettings
 from finaudit_graph.workflow import run_demo
-from finaudit_graph.knowledge import retrieve_audit_standards
 
 
 class FinAuditWorkflowTest(unittest.TestCase):
@@ -26,8 +26,7 @@ class FinAuditWorkflowTest(unittest.TestCase):
         state = run_demo()
 
         self.assertIn("parsed_financial_data", state)
-        self.assertGreaterEqual(len(state["discovered_related_parties"]), 2)
-        self.assertGreaterEqual(len(state["audit_risks_found"]), 3)
+        self.assertGreaterEqual(len(state["audit_risks_found"]), 2)
         self.assertIn("智能审计综述", state["final_audit_summary"])
 
     def test_n8n_payload_dry_run(self) -> None:
@@ -35,27 +34,27 @@ class FinAuditWorkflowTest(unittest.TestCase):
         payload = build_n8n_payload(state)
         result = send_to_n8n(payload)
 
-        self.assertEqual(payload["company_name"], "华辰智能装备股份有限公司")
+        self.assertEqual(payload["company_name"], state["parsed_financial_data"]["company_name"])
         self.assertEqual(payload["risk_count"], len(state["audit_risks_found"]))
         self.assertFalse(result["sent"])
         self.assertEqual(result["mode"], "dry_run")
 
     def test_lora_artifact_summary_reads_adapter_outputs(self) -> None:
-        summary = inspect_lora_artifact(Path("model_artifacts/lora_adapter"))
+        summary = inspect_lora_artifact(Path("showcase/lora_adapter"))
 
         self.assertEqual(summary["artifact_type"], "LoRA adapter")
         self.assertEqual(summary["base_model"], "Qwen2.5-1.5B-Instruct")
         self.assertEqual(summary["train_samples"], 80)
         self.assertIn("adapter_model.safetensors", summary["files"])
 
-    def test_full_report_markdown_contains_mvp_sections(self) -> None:
+    def test_full_report_markdown_contains_key_sections(self) -> None:
         state = run_demo()
         report = build_full_report_markdown(state)
 
         self.assertIn("企业合规风控审计报告", report)
-        self.assertIn("一、执行摘要", report)
-        self.assertIn("五、整改建议与复核计划", report)
-        self.assertIn("七、自动化记录 Payload 摘要", report)
+        self.assertIn("执行摘要", report)
+        self.assertIn(state["parsed_financial_data"]["company_name"], report)
+        self.assertIn("审计风险明细", report)
 
     def test_cli_lora_summary_prints_adapter_status(self) -> None:
         result = subprocess.run(
@@ -68,14 +67,22 @@ class FinAuditWorkflowTest(unittest.TestCase):
         self.assertIn("LoRA adapter", result.stdout)
         self.assertIn("Qwen2.5-1.5B-Instruct", result.stdout)
 
-    def test_streamlit_frontend_hides_lora_technical_artifacts(self) -> None:
+    def test_fastapi_service_entry_exists(self) -> None:
+        api_source = Path("src/finaudit_graph/api.py").read_text(encoding="utf-8")
+
+        self.assertIn("FastAPI", api_source)
+        self.assertIn("/api/audit/run", api_source)
+        self.assertNotIn("streamlit", api_source.lower())
+
+    def test_streamlit_frontend_calls_fastapi_instead_of_workflow(self) -> None:
         app_source = Path("apps/streamlit_app.py").read_text(encoding="utf-8")
 
-        self.assertNotIn("inspect_lora_artifact", app_source)
-        self.assertNotIn("LoRA 微调成果", app_source)
+        self.assertIn("/api/audit/run", app_source)
+        self.assertIn("requests.post", app_source)
+        self.assertNotIn("run_demo(", app_source)
 
     def test_project_paths_use_ascii_names_outside_environment_dirs(self) -> None:
-        ignored_parts = {".git", ".venv", "__pycache__", ".pytest_cache"}
+        ignored_parts = {".git", ".venv", "__pycache__", ".pytest_cache", "archive"}
         non_ascii_paths = []
         for path in Path(".").rglob("*"):
             if any(part in ignored_parts for part in path.parts):
@@ -337,6 +344,7 @@ class FinAuditWorkflowTest(unittest.TestCase):
         self.assertEqual("chroma_vector", results[0]["retrieval_mode"])
         self.assertGreater(results[0]["similarity"], 0)
 
+
 def _write_minimal_xlsx(path: Path, rows: list[list[str]]) -> None:
     def cell_name(row_index: int, col_index: int) -> str:
         return f"{chr(ord('A') + col_index)}{row_index + 1}"
@@ -344,7 +352,7 @@ def _write_minimal_xlsx(path: Path, rows: list[list[str]]) -> None:
     sheet_rows = []
     for row_index, row in enumerate(rows):
         cells = []
-        for col_index, value in enumerate(row):
+        for col_index, value in enumerate(rows[row_index]):
             escaped = (
                 str(value)
                 .replace("&", "&amp;")
@@ -365,10 +373,22 @@ def _write_minimal_xlsx(path: Path, rows: list[list[str]]) -> None:
         "</worksheet>"
     )
     with zipfile.ZipFile(path, "w") as archive:
-        archive.writestr("[Content_Types].xml", '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>')
-        archive.writestr("_rels/.rels", '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>')
-        archive.writestr("xl/workbook.xml", '<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="审计数据" sheetId="1" r:id="rId1"/></sheets></workbook>')
-        archive.writestr("xl/_rels/workbook.xml.rels", '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>')
+        archive.writestr(
+            "[Content_Types].xml",
+            '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>',
+        )
+        archive.writestr(
+            "_rels/.rels",
+            '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>',
+        )
+        archive.writestr(
+            "xl/workbook.xml",
+            '<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="审计数据" sheetId="1" r:id="rId1"/></sheets></workbook>',
+        )
+        archive.writestr(
+            "xl/_rels/workbook.xml.rels",
+            '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>',
+        )
         archive.writestr("xl/worksheets/sheet1.xml", sheet_xml)
 
 

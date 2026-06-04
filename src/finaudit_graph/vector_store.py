@@ -34,6 +34,7 @@ class LocalVectorStore:
 
         client = self._client()
         try:
+            # 每次重建索引都先清空旧集合，避免旧版本 embedding 污染新检索结果。
             self._reset_collection(client)
             collection = self._get_collection(client)
             collection.add(
@@ -62,6 +63,7 @@ class LocalVectorStore:
             if collection.count() == 0:
                 return []
 
+            # 这里仍然使用本地 hashing embedding，只是把持久化和检索交给 Chroma。
             result = collection.query(
                 query_embeddings=[self.embed(query)],
                 n_results=limit,
@@ -99,6 +101,7 @@ class LocalVectorStore:
             self.build_from_json(source)
             return
 
+        # manifest 用来判断“当前磁盘索引是否和代码预期一致”。
         if (
             manifest.get("vector_db") != VECTOR_DB_ENGINE
             or manifest.get("embedding_model") != EMBEDDING_MODEL
@@ -120,6 +123,7 @@ class LocalVectorStore:
             self.build_from_json(source)
 
     def embed(self, text: str) -> list[float]:
+        # 采用可复现的本地向量化方案，保证答辩和离线环境也能稳定运行。
         vector = [0.0] * self.dimensions
         for token in tokenize(text):
             digest = hashlib.sha256(token.encode("utf-8")).digest()
@@ -213,6 +217,7 @@ class LocalVectorStore:
 
 
 def tokenize(text: str) -> list[str]:
+    # 中文按字/2-gram/3-gram 切片，英文和数字按 token 保留，兼顾中英混合材料。
     cleaned = re.sub(r"\s+", "", text.lower())
     tokens = re.findall(r"[a-z0-9_]+", text.lower())
     chinese_chars = [character for character in cleaned if "\u4e00" <= character <= "\u9fff"]

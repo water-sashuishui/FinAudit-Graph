@@ -6,6 +6,8 @@ from pathlib import Path
 from .automation import build_n8n_payload
 from .state import AuditSystemState
 
+# 本模块负责把工作流状态整理成“可交付物”：
+# 既能生成 Markdown 版本给前端/CLI 展示，也能继续落盘为 DOCX 报告。
 
 def _safe_filename(value: str) -> str:
     cleaned = []

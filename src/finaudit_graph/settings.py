@@ -4,6 +4,8 @@ import os
 from dataclasses import dataclass
 from pathlib import Path
 
+# 本模块统一管理运行配置。
+# 设计目标是：优先读取系统环境变量，其次读取项目根目录下的 .env，且不覆盖用户已显式设置的值。
 
 def _load_dotenv_if_present(path: str | Path = ".env") -> None:
     """Load simple KEY=VALUE pairs without overriding existing environment values."""
@@ -39,6 +41,7 @@ class ProjectSettings:
 
     @classmethod
     def from_env(cls) -> "ProjectSettings":
+        # 所有入口（CLI、Streamlit、工作流）都通过这里拿配置，避免各处重复读 .env。
         _load_dotenv_if_present()
         return cls(
             neo4j_uri=os.getenv("NEO4J_URI", cls.neo4j_uri),

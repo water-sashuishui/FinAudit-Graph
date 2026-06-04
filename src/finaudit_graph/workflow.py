@@ -33,6 +33,7 @@ def build_audit_workflow():
     try:
         from langgraph.graph import END, StateGraph
     except ImportError:
+        # 没有安装 LangGraph 时，仍按同样的节点顺序串行执行，保证 MVP 可跑。
         return SequentialAuditWorkflow(
             [
                 node_data_parser,
@@ -43,6 +44,7 @@ def build_audit_workflow():
         )
 
     workflow = StateGraph(AuditSystemState)
+    # 四个节点分别负责：材料解析、图谱线索检索、风险判断、报告生成。
     workflow.add_node("node_data_parser", node_data_parser)
     workflow.add_node("node_graph_searcher", node_graph_searcher)
     workflow.add_node("node_compliance_checker", node_compliance_checker)
@@ -56,7 +58,7 @@ def build_audit_workflow():
     return workflow.compile()
 
 
-def run_demo(raw_document_path: str = "data/raw/demo_annual_report.pdf") -> AuditSystemState:
+def run_demo(raw_document_path: str = "showcase/demo_inputs/test_audit.txt") -> AuditSystemState:
+    # demo 入口只负责准备初始状态，真正的执行顺序交给工作流本身。
     graph = build_audit_workflow()
     return graph.invoke({"raw_document_path": raw_document_path})
-

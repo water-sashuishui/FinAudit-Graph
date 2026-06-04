@@ -12,7 +12,8 @@ from .state import AuditSystemState
 
 def node_data_parser(state: AuditSystemState) -> AuditSystemState:
     """Parse source audit material into structured financial facts."""
-    raw_path = state.get("raw_document_path", "data/raw/demo_annual_report.pdf")
+    # 第一节点只负责解析，不在这里混入风险判断逻辑。
+    raw_path = state.get("raw_document_path", "showcase/demo_inputs/test_audit.txt")
     parsed = parse_financial_document(raw_path)
     return {**state, "parsed_financial_data": parsed, "error_message": ""}
 
@@ -22,6 +23,7 @@ def node_graph_searcher(state: AuditSystemState) -> AuditSystemState:
     parsed = state.get("parsed_financial_data", {})
     company_name = parsed.get("company_name", "未知企业")
 
+    # 当前主要依赖本地图谱 fallback，但保留 Cypher 模板以便后续切回真 Neo4j。
     cypher_query = """
     MATCH (c:Company {name: $company_name})-[r:OWNS|CONTROLS|SUPPLIES*1..3]-(p:Company)
     WHERE any(rel IN r WHERE rel.hidden = true OR rel.ratio >= 0.2)
@@ -42,6 +44,7 @@ def node_compliance_checker(state: AuditSystemState) -> AuditSystemState:
     """Classify audit risks using parsed facts, graph clues, and RAG evidence."""
     parsed = state.get("parsed_financial_data", {})
     related_parties = state.get("discovered_related_parties", [])
+    # 先取一批审计准则片段，供 Agent、LLM 和规则兜底共同使用。
     standards = retrieve_audit_standards(
         [
             "收入",
@@ -57,6 +60,7 @@ def node_compliance_checker(state: AuditSystemState) -> AuditSystemState:
     )
     basis_by_id = {item["id"]: item["content"] for item in standards}
 
+    # 风险判断采用三级回退：Agent -> DeepSeek -> 本地规则。
     agent_risks = run_langchain_audit_agent(parsed, related_parties, standards)
     if agent_risks:
         return {**state, "audit_risks_found": agent_risks, "llm_provider": "langchain_deepseek_agent"}
@@ -65,6 +69,7 @@ def node_compliance_checker(state: AuditSystemState) -> AuditSystemState:
     if llm_risks:
         return {**state, "audit_risks_found": llm_risks, "llm_provider": "deepseek"}
 
+    # 下面的规则负责在离线或 API 失败时兜底，保证系统仍能稳定出报告。
     risks = [
         {
             "risk_type": "虚增收入",
@@ -152,6 +157,7 @@ def _try_deepseek_risk_analysis(
         },
     ]
     try:
+        # 这里只接受结构化 JSON，避免模型输出散文后前端无法消费。
         content = client.chat(messages)
         data = json.loads(content)
         risks = data.get("risks", [])
@@ -174,6 +180,7 @@ def node_report_generator(state: AuditSystemState) -> AuditSystemState:
     related_parties = state.get("discovered_related_parties", [])
     risks = state.get("audit_risks_found", [])
 
+    # 先把各段内容拼好，再统一生成 Markdown，便于后续导出 DOCX。
     risk_lines = []
     for index, risk in enumerate(risks, start=1):
         risk_lines.append(
