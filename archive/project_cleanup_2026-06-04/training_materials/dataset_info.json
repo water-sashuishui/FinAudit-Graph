@@ -1,0 +1,11 @@
+{
+  "finaudit_audit_risk_labelstudio_80": {
+    "file_name": "audit_risk_sft_from_labelstudio_80.jsonl",
+    "formatting": "alpaca",
+    "columns": {
+      "prompt": "instruction",
+      "query": "input",
+      "response": "output"
+    }
+  }
+}

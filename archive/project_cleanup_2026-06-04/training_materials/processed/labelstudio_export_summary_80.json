@@ -1,0 +1,18 @@
+{
+  "input_file": "data\\labeling\\project-36-at-2026-06-03-12-25-45eec0b7.json",
+  "output_file": "data\\processed\\audit_risk_sft_from_labelstudio_80.jsonl",
+  "task_count": 80,
+  "converted_count": 80,
+  "risk_type_counts": {
+    "虚增收入/利润": 21,
+    "关联方利益输送/资金占用": 20,
+    "资产减值风险 (存货/应收)": 20,
+    "内控缺陷/信息披露不充分": 19
+  },
+  "entity_label_counts": {
+    "关键财务指标": 166,
+    "异常审计表现": 88,
+    "涉案金额": 87,
+    "管理层抗辩理由": 80
+  }
+}

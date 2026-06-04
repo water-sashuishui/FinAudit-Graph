@@ -1,0 +1,24 @@
+<View>
+  <Header value="📄 审计抽样发现（请在此段落中划词标注实体）" />
+  <Text name="audit_text" value="$text" />
+
+  <Header value="🏷️ 1. 划词实体标注" />
+  <Labels name="audit_tags" toName="audit_text">
+    <Label value="关键财务指标" background="#FFA07A" />
+    <Label value="异常审计表现" background="#FF6347" />
+    <Label value="涉案金额" background="#3CB371" />
+    <Label value="管理层抗辩理由" background="#BA55D3" />
+  </Labels>
+
+  <View style="margin: 20px 0; border-top: 1px solid #eee;"></View>
+
+  <Header value="⚖️ 2. 整体意图定性 (单选)" />
+  <Text name="label_risk_type" value="最终认定的审计风险类型:" />
+  <Choices name="final_risk_type" toName="audit_text" choice="single">
+    <Choice value="虚增收入/利润" />
+    <Choice value="关联方利益输送/资金占用" />
+    <Choice value="资产减值风险 (存货/应收)" />
+    <Choice value="内控缺陷/信息披露不充分" />
+    <Choice value="正常商业安排 (无风险)" />
+  </Choices>
+</View>

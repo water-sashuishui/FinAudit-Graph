@@ -1,0 +1,222 @@
+from __future__ import annotations
+
+from pathlib import Path
+import json
+
+from .knowledge import retrieve_related_parties, retrieve_audit_standards
+from .llm import DeepSeekClient
+from .audit_agent import run_langchain_audit_agent
+from .parsing import parse_financial_document
+from .state import AuditSystemState
+
+
+def node_data_parser(state: AuditSystemState) -> AuditSystemState:
+    """Parse source audit material into structured financial facts."""
+    raw_path = state.get("raw_document_path", "data/raw/demo_annual_report.pdf")
+    parsed = parse_financial_document(raw_path)
+    return {**state, "parsed_financial_data": parsed, "error_message": ""}
+
+
+def node_graph_searcher(state: AuditSystemState) -> AuditSystemState:
+    """Discover hidden related parties with a Neo4j-style relationship query."""
+    parsed = state.get("parsed_financial_data", {})
+    company_name = parsed.get("company_name", "未知企业")
+
+    cypher_query = """
+    MATCH (c:Company {name: $company_name})-[r:OWNS|CONTROLS|SUPPLIES*1..3]-(p:Company)
+    WHERE any(rel IN r WHERE rel.hidden = true OR rel.ratio >= 0.2)
+    RETURN p.name AS related_party, length(r) AS depth, r AS relation_path
+    LIMIT 20
+    """
+    related_parties = retrieve_related_parties(company_name)
+    for item in related_parties:
+        item["cypher_template"] = cypher_query.strip()
+    return {
+        **state,
+        "parsed_financial_data": {**parsed, "company_name": company_name},
+        "discovered_related_parties": related_parties,
+    }
+
+
+def node_compliance_checker(state: AuditSystemState) -> AuditSystemState:
+    """Classify audit risks using parsed facts, graph clues, and RAG evidence."""
+    parsed = state.get("parsed_financial_data", {})
+    related_parties = state.get("discovered_related_parties", [])
+    standards = retrieve_audit_standards(
+        [
+            "收入",
+            "现金流",
+            "应收账款",
+            "关联方",
+            "控制",
+            "内控",
+            "毛利率",
+            "成本",
+        ],
+        limit=4,
+    )
+    basis_by_id = {item["id"]: item["content"] for item in standards}
+
+    agent_risks = run_langchain_audit_agent(parsed, related_parties, standards)
+    if agent_risks:
+        return {**state, "audit_risks_found": agent_risks, "llm_provider": "langchain_deepseek_agent"}
+
+    llm_risks = _try_deepseek_risk_analysis(parsed, related_parties, standards)
+    if llm_risks:
+        return {**state, "audit_risks_found": llm_risks, "llm_provider": "deepseek"}
+
+    risks = [
+        {
+            "risk_type": "虚增收入",
+            "severity": "高",
+            "evidence": "收入增长率显著高于经营现金流增长率，且应收账款同步快速上升。",
+            "audit_basis": basis_by_id.get(
+                "revenue-recognition",
+                "收入确认应结合合同义务履约、验收证据和现金流回款情况复核。",
+            ),
+            "recommendation": "抽查期末大额合同、验收单、发票和回款记录，重点复核跨期收入。",
+        },
+        {
+            "risk_type": "内控缺陷",
+            "severity": "中",
+            "evidence": "收入、应收和关联方线索同时异常，提示审批和复核控制可能不足。",
+            "audit_basis": basis_by_id.get(
+                "internal-control",
+                "关键业务流程应保留审批、验收、对账和复核底稿。",
+            ),
+            "recommendation": "复核销售审批、客户信用评估和期后回款监控流程。",
+        },
+    ]
+
+    if related_parties:
+        risks.insert(
+            1,
+            {
+                "risk_type": "关联方利益输送",
+                "severity": "高",
+                "evidence": f"图谱发现 {len(related_parties)} 个潜在关联方，存在共同控制或资金往来线索。",
+                "audit_basis": basis_by_id.get(
+                    "related-party",
+                    "关联方交易应完整披露交易背景、定价公允性和资金流向。",
+                ),
+                "recommendation": "执行股权穿透和银行流水核查，补充关联交易披露充分性测试。",
+            },
+        )
+
+    if parsed.get("gross_margin_rate", 0) > 55:
+        risks.append(
+            {
+                "risk_type": "成本结转异常",
+                "severity": "中",
+                "evidence": "毛利率高于常规制造业水平，需要核查成本结转完整性。",
+                "audit_basis": basis_by_id.get(
+                    "cost-inventory",
+                    "成本费用应与收入配比，存货发出和生产成本分摊应有一致依据。",
+                ),
+                "recommendation": "抽查成本计算单、出入库记录和成本分摊规则。",
+            }
+        )
+    return {**state, "audit_risks_found": risks}
+
+
+def _try_deepseek_risk_analysis(
+    parsed: dict,
+    related_parties: list[dict],
+    standards: list[dict],
+) -> list[dict] | None:
+    """Call DeepSeek for structured risk analysis when API settings exist."""
+    client = DeepSeekClient()
+    if not client.configured:
+        return None
+
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "你是财务审计与合规审查专家。只返回 JSON，不要 Markdown。"
+                "JSON 格式必须为 {\"risks\": [{\"risk_type\": str, \"severity\": str, "
+                "\"evidence\": str, \"audit_basis\": str, \"recommendation\": str}]}。"
+            ),
+        },
+        {
+            "role": "user",
+            "content": json.dumps(
+                {
+                    "parsed_financial_data": parsed,
+                    "related_parties": related_parties,
+                    "audit_standards": standards,
+                    "task": "识别 3 到 5 个审计风险点，风险等级只能使用 高/中/低。",
+                },
+                ensure_ascii=False,
+            ),
+        },
+    ]
+    try:
+        content = client.chat(messages)
+        data = json.loads(content)
+        risks = data.get("risks", [])
+        if not isinstance(risks, list):
+            return None
+        valid_risks = []
+        for risk in risks:
+            if not isinstance(risk, dict):
+                continue
+            if {"risk_type", "severity", "evidence", "audit_basis", "recommendation"}.issubset(risk):
+                valid_risks.append(risk)
+        return valid_risks or None
+    except Exception:
+        return None
+
+
+def node_report_generator(state: AuditSystemState) -> AuditSystemState:
+    """Generate a Markdown audit summary from all previous workflow outputs."""
+    parsed = state.get("parsed_financial_data", {})
+    related_parties = state.get("discovered_related_parties", [])
+    risks = state.get("audit_risks_found", [])
+
+    risk_lines = []
+    for index, risk in enumerate(risks, start=1):
+        risk_lines.append(
+            "\n".join(
+                [
+                    f"{index}. **{risk['risk_type']}（{risk['severity']}）**",
+                    f"   - 依据：{risk['evidence']}",
+                    f"   - 准则/审计关注：{risk['audit_basis']}",
+                    f"   - 建议：{risk['recommendation']}",
+                ]
+            )
+        )
+
+    related_party_lines = [
+        f"- {item['name']}：{item['relation']}，穿透深度 {item['depth']}，证据：{item['evidence']}"
+        for item in related_parties
+    ]
+
+    summary = f"""# FinAudit-Graph 智能审计综述
+
+## 一、被审计对象
+
+- 企业名称：{parsed.get("company_name", "未知企业")}
+- 报告年度：{parsed.get("reporting_year", "未知")}
+- 原始文件：{parsed.get("source_file", "未提供")}
+
+## 二、核心财务线索
+
+- 营业收入增长率：{parsed.get("revenue_growth_rate", "N/A")}%
+- 经营现金流增长率：{parsed.get("operating_cashflow_growth_rate", "N/A")}%
+- 毛利率：{parsed.get("gross_margin_rate", "N/A")}%
+- 应收账款增长率：{parsed.get("accounts_receivable_growth_rate", "N/A")}%
+
+## 三、潜在关联方
+
+{chr(10).join(related_party_lines)}
+
+## 四、审计风险点
+
+{chr(10).join(risk_lines)}
+
+## 五、综合结论
+
+系统建议将该企业列为高优先级复核对象，重点围绕收入真实性、关联交易披露充分性、成本结转完整性和内控审批链条开展进一步审计程序。
+"""
+    return {**state, "final_audit_summary": summary}

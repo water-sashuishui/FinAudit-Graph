@@ -1,0 +1,29 @@
+{
+  "finaudit_audit_risk_demo": {
+    "file_name": "audit_risk_sft_demo.jsonl",
+    "formatting": "alpaca",
+    "columns": {
+      "prompt": "instruction",
+      "query": "input",
+      "response": "output"
+    }
+  },
+  "finaudit_audit_risk_labelstudio_30": {
+    "file_name": "../../processed/audit_risk_sft_from_labelstudio_30.jsonl",
+    "formatting": "alpaca",
+    "columns": {
+      "prompt": "instruction",
+      "query": "input",
+      "response": "output"
+    }
+  },
+  "finaudit_audit_risk_labelstudio_80": {
+    "file_name": "../../processed/audit_risk_sft_from_labelstudio_80.jsonl",
+    "formatting": "alpaca",
+    "columns": {
+      "prompt": "instruction",
+      "query": "input",
+      "response": "output"
+    }
+  }
+}

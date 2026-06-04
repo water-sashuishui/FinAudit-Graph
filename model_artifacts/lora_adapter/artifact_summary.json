@@ -1,0 +1,12 @@
+{
+  "artifact_type": "LoRA adapter",
+  "base_model": "Qwen2.5-1.5B-Instruct",
+  "finetuning_type": "LoRA",
+  "train_samples": 80,
+  "source": "AutoDL LLaMA-Factory training run",
+  "notes": [
+    "adapter_model.safetensors and adapter_config.json are adapter files, not a full base model.",
+    "Load this adapter together with Qwen2.5-1.5B-Instruct for inference.",
+    "The original exported training configuration is kept for traceability."
+  ]
+}

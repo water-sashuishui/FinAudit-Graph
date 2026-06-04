@@ -1,0 +1,20 @@
+﻿stage: sft
+do_train: true
+model_name_or_path: Qwen/Qwen2.5-7B-Instruct
+dataset: finaudit_audit_risk_labelstudio_80
+template: qwen
+finetuning_type: lora
+lora_target: all
+output_dir: outputs/llama_factory/finaudit_lora_labelstudio_80
+overwrite_cache: true
+overwrite_output_dir: true
+cutoff_len: 2048
+preprocessing_num_workers: 4
+per_device_train_batch_size: 1
+gradient_accumulation_steps: 8
+learning_rate: 0.0001
+num_train_epochs: 2
+logging_steps: 10
+save_steps: 50
+plot_loss: true
+
