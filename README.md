@@ -1,25 +1,25 @@
 # FinAudit-Graph
 
-FinAudit-Graph 是一个面向毕业设计演示的智能财务审计与合规审查 MVP。当前系统采用 **FastAPI + Streamlit 共存** 的方式：
+FinAudit-Graph 是一个面向毕业设计演示的智能财务助手 / 审计分析 MVP。  
+当前系统采用 **FastAPI + Streamlit 共存** 的方式：
 
-- `FastAPI` 作为主后端入口与服务接口层
-- `Streamlit` 作为演示前端，专门调用 FastAPI 接口展示上传、分析和报告结果
+- `FastAPI` 作为后端服务与接口层
+- `Streamlit` 作为演示前端，负责上传材料、触发分析和展示结果
 
 ## 当前能力
 
-- `LangGraph` 四节点工作流：`Data_Parser -> Graph_Searcher -> Compliance_Checker -> Report_Generator`
-- `LangChain 1.x Agent + DeepSeek`：在合规审查节点执行结构化风险判断
-- `多智能体协商`：Risk / Evidence / Recommendation 三角色有界协商，输出置信度与保留意见
-- `Chroma` 本地持久化向量数据库：用于审计准则 RAG 检索
-- `Neo4j / JSON fallback`：用于关联方穿透分析
-- 多格式材料解析：支持 `txt / pdf / docx / xlsx / xls / csv`
-- `FastAPI`：主服务入口与 Swagger 调试入口
-- `Streamlit`：调用 FastAPI 的演示前端
-- `Markdown / DOCX` 报告生成
-- `N8N dry-run / webhook` 自动化留痕
-- `评测与安全防护`：本地评测集、PII 脱敏、Prompt Injection 拦截
+- 多格式材料解析：`txt / pdf / docx / xlsx / xls / csv`
+- 审计准则 RAG：基于 `Chroma` 本地持久化向量库
+- 财务风险识别：`LangGraph` 四节点工作流
+- 多智能体协商：`Risk / Evidence / Recommendation`
+- 报告生成：`Markdown / DOCX`
+- 自动化记录：`N8N dry-run / webhook`
+- 评测与安全防护：
+  - 本地评测集
+  - PII 脱敏
+  - Prompt Injection 拦截
 
-## 最小运行结构
+## 项目结构
 
 ```text
 FinAudit-Graph/
@@ -45,34 +45,7 @@ FinAudit-Graph/
 └─ README.md
 ```
 
-## FastAPI 接口
-
-- `GET /api/health`
-- `GET /api/config/status`
-- `POST /api/rag/query`
-- `POST /api/rag/rebuild`
-- `POST /api/audit/run`
-
-`POST /api/audit/run` 同时支持：
-
-- 上传文件
-- 提交本地文件路径
-
-返回字段包括：
-
-- `request_id`
-- `status`
-- `parsed_financial_data`
-- `related_parties`
-- `audit_risks`
-- `negotiation_trace`
-- `llm_provider`
-- `final_report_markdown`
-- `n8n_result`
-- `warnings`
-- `security_flags`
-
-## 环境配置
+## 环境准备
 
 先复制环境变量模板：
 
@@ -92,50 +65,84 @@ NEO4J_PASSWORD=password
 N8N_WEBHOOK_URL=
 ```
 
-## 安装依赖
+安装依赖：
 
 ```powershell
 pip install -r requirements.txt
 pip install -e .
 ```
 
-## 启动方式
+## 演示启动方式
 
-### 1. 启动 FastAPI 主服务
+**注意：演示时需要同时启动两个服务。**
+
+### 1. 启动 FastAPI 后端
 
 ```powershell
 python -m uvicorn finaudit_graph.api:app --reload
 ```
 
-Swagger 地址：
+本地地址：
 
-- [http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+- Swagger 文档页：[http://127.0.0.1:8000/docs](http://127.0.0.1:8000/docs)
+- OpenAPI JSON：[http://127.0.0.1:8000/openapi.json](http://127.0.0.1:8000/openapi.json)
 
-### 2. 启动 Streamlit 演示前端
+### 2. 启动 Streamlit 前端
 
 ```powershell
 python -m streamlit run apps/streamlit_app.py
 ```
 
+本地地址通常为：
+
+- [http://localhost:8501](http://localhost:8501)
+
+如果 `8501` 端口被占用，可以改用：
+
+```powershell
+python -m streamlit run apps/streamlit_app.py --server.port 8506
+```
+
+对应地址：
+
+- [http://localhost:8506](http://localhost:8506)
+
+## 推荐演示顺序
+
+1. 先启动 FastAPI
+2. 打开 Swagger，确认接口可用
+3. 再启动 Streamlit
+4. 在 Streamlit 页面上传财务材料并执行分析
+5. 展示报告、风险识别结果和下载能力
+
+## FastAPI 接口
+
+- `GET /api/health`
+- `GET /api/config/status`
+- `POST /api/rag/query`
+- `POST /api/rag/rebuild`
+- `POST /api/audit/run`
+
+`POST /api/audit/run` 支持：
+
+- 上传文件
+- 提交本地文件路径
+
+返回字段包括：
+
+- `request_id`
+- `status`
+- `parsed_financial_data`
+- `related_parties`
+- `audit_risks`
+- `negotiation_trace`
+- `llm_provider`
+- `final_report_markdown`
+- `n8n_result`
+- `warnings`
+- `security_flags`
+
 ## CLI 用法
-
-运行 demo：
-
-```powershell
-python -m finaudit_graph --demo
-```
-
-生成报告文件：
-
-```powershell
-python -m finaudit_graph --demo --save-report
-```
-
-查询审计准则：
-
-```powershell
-python -m finaudit_graph --rag-query "收入增长和应收账款异常，需要关注截止性"
-```
 
 重建 RAG 向量库：
 
@@ -143,7 +150,25 @@ python -m finaudit_graph --rag-query "收入增长和应收账款异常，需要
 python -m finaudit_graph --build-rag-index
 ```
 
-运行本地评测：
+查询审计准则：
+
+```powershell
+python -m finaudit_graph --rag-query "收入增长和应收账款异常，需要关注什么风险"
+```
+
+运行 Demo：
+
+```powershell
+python -m finaudit_graph --demo
+```
+
+指定材料并保存报告：
+
+```powershell
+python -m finaudit_graph --demo --document showcase/demo_inputs/sample_financial_data.xlsx --save-report
+```
+
+运行评测：
 
 ```powershell
 python -m finaudit_graph --run-eval
@@ -153,6 +178,13 @@ python -m finaudit_graph --run-eval
 
 ```powershell
 python -m finaudit_graph --lora-summary
+```
+
+## 测试
+
+```powershell
+python showcase/tests/test_workflow.py
+python showcase/tests/test_api.py
 ```
 
 ## 评测与安全
@@ -166,19 +198,3 @@ python -m finaudit_graph --lora-summary
   - 手机号 / 邮箱 / 身份证 / 银行账号脱敏
   - Prompt Injection 规则拦截
   - 命中注入时返回 `blocked_for_review`
-
-## 测试
-
-```powershell
-python showcase/tests/test_workflow.py
-python showcase/tests/test_api.py
-```
-
-## 演示建议顺序
-
-1. 先启动 FastAPI 并打开 Swagger
-2. 用 `POST /api/rag/rebuild` 重建向量库
-3. 用 `POST /api/audit/run` 验证后端接口
-4. 再打开 Streamlit，做可视化上传和报告展示
-5. 演示含敏感信息或恶意指令的材料会被拦截
-6. 最后运行 `python -m finaudit_graph --run-eval` 展示评测指标
