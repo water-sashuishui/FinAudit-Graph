@@ -16,6 +16,7 @@ from finaudit_graph.automation import build_n8n_payload, send_to_n8n
 from finaudit_graph.knowledge import retrieve_audit_standards
 from finaudit_graph.llm import DeepSeekClient, normalize_chat_completions_url
 from finaudit_graph.lora import inspect_lora_artifact
+from finaudit_graph.negotiation import run_multi_agent_negotiation
 from finaudit_graph.reporting import build_full_report_markdown
 from finaudit_graph.settings import ProjectSettings
 from finaudit_graph.workflow import run_demo
@@ -38,6 +39,8 @@ class FinAuditWorkflowTest(unittest.TestCase):
         self.assertEqual(payload["risk_count"], len(state["audit_risks_found"]))
         self.assertFalse(result["sent"])
         self.assertEqual(result["mode"], "dry_run")
+        self.assertIn("confidence", state["audit_risks_found"][0])
+        self.assertIn("negotiation_trace", state)
 
     def test_lora_artifact_summary_reads_adapter_outputs(self) -> None:
         summary = inspect_lora_artifact(Path("showcase/lora_adapter"))
@@ -228,6 +231,7 @@ class FinAuditWorkflowTest(unittest.TestCase):
 
         self.assertEqual("langchain_deepseek_agent", result["llm_provider"])
         self.assertEqual("Agent审计风险", result["audit_risks_found"][0]["risk_type"])
+        self.assertGreaterEqual(len(result["negotiation_trace"]), 1)
 
     def test_txt_document_parser_uses_uploaded_content(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -343,6 +347,47 @@ class FinAuditWorkflowTest(unittest.TestCase):
         self.assertEqual("revenue-recognition", results[0]["id"])
         self.assertEqual("chroma_vector", results[0]["retrieval_mode"])
         self.assertGreater(results[0]["similarity"], 0)
+
+    def test_multi_agent_negotiation_resolves_conflicts_with_trace(self) -> None:
+        risks = [
+            {
+                "risk_type": "虚增收入",
+                "severity": "中",
+                "evidence": "收入与现金流异常。",
+                "audit_basis": "收入确认需要复核。",
+                "recommendation": "复核。",
+            }
+        ]
+        result = run_multi_agent_negotiation(
+            risks,
+            parsed={"revenue_growth_rate": 35.5, "operating_cashflow_growth_rate": -8.2},
+            related_parties=[],
+            standards=[{"id": "revenue-recognition", "content": "收入确认准则"}],
+        )
+
+        self.assertGreaterEqual(len(result["trace"]), 1)
+        self.assertEqual("高", result["risks"][0]["severity"])
+        self.assertIn("RiskAgent", result["risks"][0]["consulted_agents"])
+
+    def test_multi_agent_negotiation_stays_bounded_to_two_rounds(self) -> None:
+        risks = [
+            {
+                "risk_type": "关联方利益输送",
+                "severity": "中",
+                "evidence": "存在异常。",
+                "audit_basis": "关联方准则。",
+                "recommendation": "补充核查。",
+            }
+        ]
+        result = run_multi_agent_negotiation(
+            risks,
+            parsed={},
+            related_parties=[],
+            standards=[],
+            max_rounds=2,
+        )
+
+        self.assertLessEqual(max(item["round"] for item in result["trace"]), 2)
 
 
 def _write_minimal_xlsx(path: Path, rows: list[list[str]]) -> None:

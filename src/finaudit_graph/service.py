@@ -35,6 +35,8 @@ def execute_audit(
         "parsed_financial_data": workflow_state.get("parsed_financial_data", {}),
         "related_parties": workflow_state.get("discovered_related_parties", []),
         "audit_risks": workflow_state.get("audit_risks_found", []),
+        "negotiation_trace": workflow_state.get("negotiation_trace", []),
+        "llm_provider": workflow_state.get("llm_provider", ""),
         "final_report_markdown": report,
         "n8n_result": n8n_result,
         "warnings": warnings,

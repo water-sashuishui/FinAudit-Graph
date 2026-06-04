@@ -1,18 +1,17 @@
 from __future__ import annotations
 
-from pathlib import Path
 import json
 
-from .knowledge import retrieve_related_parties, retrieve_audit_standards
-from .llm import DeepSeekClient
 from .audit_agent import run_langchain_audit_agent
+from .knowledge import retrieve_audit_standards, retrieve_related_parties
+from .llm import DeepSeekClient
+from .negotiation import run_multi_agent_negotiation
 from .parsing import parse_financial_document
 from .state import AuditSystemState
 
 
 def node_data_parser(state: AuditSystemState) -> AuditSystemState:
     """Parse source audit material into structured financial facts."""
-    # 第一节点只负责解析，不在这里混入风险判断逻辑。
     raw_path = state.get("raw_document_path", "showcase/demo_inputs/test_audit.txt")
     parsed = parse_financial_document(raw_path)
     return {**state, "parsed_financial_data": parsed, "error_message": ""}
@@ -23,7 +22,6 @@ def node_graph_searcher(state: AuditSystemState) -> AuditSystemState:
     parsed = state.get("parsed_financial_data", {})
     company_name = parsed.get("company_name", "未知企业")
 
-    # 当前主要依赖本地图谱 fallback，但保留 Cypher 模板以便后续切回真 Neo4j。
     cypher_query = """
     MATCH (c:Company {name: $company_name})-[r:OWNS|CONTROLS|SUPPLIES*1..3]-(p:Company)
     WHERE any(rel IN r WHERE rel.hidden = true OR rel.ratio >= 0.2)
@@ -44,32 +42,20 @@ def node_compliance_checker(state: AuditSystemState) -> AuditSystemState:
     """Classify audit risks using parsed facts, graph clues, and RAG evidence."""
     parsed = state.get("parsed_financial_data", {})
     related_parties = state.get("discovered_related_parties", [])
-    # 先取一批审计准则片段，供 Agent、LLM 和规则兜底共同使用。
     standards = retrieve_audit_standards(
-        [
-            "收入",
-            "现金流",
-            "应收账款",
-            "关联方",
-            "控制",
-            "内控",
-            "毛利率",
-            "成本",
-        ],
+        ["收入", "现金流", "应收账款", "关联方", "控制", "内控", "毛利率", "成本"],
         limit=4,
     )
     basis_by_id = {item["id"]: item["content"] for item in standards}
 
-    # 风险判断采用三级回退：Agent -> DeepSeek -> 本地规则。
     agent_risks = run_langchain_audit_agent(parsed, related_parties, standards)
     if agent_risks:
-        return {**state, "audit_risks_found": agent_risks, "llm_provider": "langchain_deepseek_agent"}
+        return _finalize_negotiation(state, parsed, related_parties, standards, agent_risks, "langchain_deepseek_agent")
 
     llm_risks = _try_deepseek_risk_analysis(parsed, related_parties, standards)
     if llm_risks:
-        return {**state, "audit_risks_found": llm_risks, "llm_provider": "deepseek"}
+        return _finalize_negotiation(state, parsed, related_parties, standards, llm_risks, "deepseek")
 
-    # 下面的规则负责在离线或 API 失败时兜底，保证系统仍能稳定出报告。
     risks = [
         {
             "risk_type": "虚增收入",
@@ -121,7 +107,24 @@ def node_compliance_checker(state: AuditSystemState) -> AuditSystemState:
                 "recommendation": "抽查成本计算单、出入库记录和成本分摊规则。",
             }
         )
-    return {**state, "audit_risks_found": risks}
+    return _finalize_negotiation(state, parsed, related_parties, standards, risks, "local_rules_negotiated")
+
+
+def _finalize_negotiation(
+    state: AuditSystemState,
+    parsed: dict,
+    related_parties: list[dict],
+    standards: list[dict],
+    risks: list[dict],
+    provider: str,
+) -> AuditSystemState:
+    negotiated = run_multi_agent_negotiation(risks, parsed, related_parties, standards)
+    return {
+        **state,
+        "audit_risks_found": negotiated["risks"],
+        "negotiation_trace": negotiated["trace"],
+        "llm_provider": provider,
+    }
 
 
 def _try_deepseek_risk_analysis(
@@ -150,14 +153,13 @@ def _try_deepseek_risk_analysis(
                     "parsed_financial_data": parsed,
                     "related_parties": related_parties,
                     "audit_standards": standards,
-                    "task": "识别 3 到 5 个审计风险点，风险等级只能使用 高/中/低。",
+                    "task": "识别 3 到 5 个审计风险点，风险等级只能使用 高 中 低。",
                 },
                 ensure_ascii=False,
             ),
         },
     ]
     try:
-        # 这里只接受结构化 JSON，避免模型输出散文后前端无法消费。
         content = client.chat(messages)
         data = json.loads(content)
         risks = data.get("risks", [])
@@ -180,19 +182,20 @@ def node_report_generator(state: AuditSystemState) -> AuditSystemState:
     related_parties = state.get("discovered_related_parties", [])
     risks = state.get("audit_risks_found", [])
 
-    # 先把各段内容拼好，再统一生成 Markdown，便于后续导出 DOCX。
     risk_lines = []
     for index, risk in enumerate(risks, start=1):
-        risk_lines.append(
-            "\n".join(
-                [
-                    f"{index}. **{risk['risk_type']}（{risk['severity']}）**",
-                    f"   - 依据：{risk['evidence']}",
-                    f"   - 准则/审计关注：{risk['audit_basis']}",
-                    f"   - 建议：{risk['recommendation']}",
-                ]
-            )
-        )
+        confidence = f"；协商置信度 {risk.get('confidence', 0):.2f}" if "confidence" in risk else ""
+        notes = risk.get("disagreement_notes", [])
+        note_line = f"   - 保留意见：{'；'.join(notes)}" if notes else None
+        block = [
+            f"{index}. **{risk['risk_type']}（{risk['severity']}）**",
+            f"   - 依据：{risk['evidence']}",
+            f"   - 准则/审计关注：{risk['audit_basis']}",
+            f"   - 建议：{risk['recommendation']}{confidence}",
+        ]
+        if note_line:
+            block.append(note_line)
+        risk_lines.append("\n".join(block))
 
     related_party_lines = [
         f"- {item['name']}：{item['relation']}，穿透深度 {item['depth']}，证据：{item['evidence']}"
@@ -208,7 +211,6 @@ def node_report_generator(state: AuditSystemState) -> AuditSystemState:
 - 原始文件：{parsed.get("source_file", "未提供")}
 
 ## 二、核心财务线索
-
 - 营业收入增长率：{parsed.get("revenue_growth_rate", "N/A")}%
 - 经营现金流增长率：{parsed.get("operating_cashflow_growth_rate", "N/A")}%
 - 毛利率：{parsed.get("gross_margin_rate", "N/A")}%
@@ -216,14 +218,12 @@ def node_report_generator(state: AuditSystemState) -> AuditSystemState:
 
 ## 三、潜在关联方
 
-{chr(10).join(related_party_lines)}
+{chr(10).join(related_party_lines) if related_party_lines else "- 暂未发现可疑关联方。"}
 
 ## 四、审计风险点
 
 {chr(10).join(risk_lines)}
 
 ## 五、综合结论
-
-系统建议将该企业列为高优先级复核对象，重点围绕收入真实性、关联交易披露充分性、成本结转完整性和内控审批链条开展进一步审计程序。
-"""
+系统建议将该企业列为高优先级复核对象，重点围绕收入真实性、关联交易披露充分性、成本结转完整性和内控审批链条开展进一步审计程序。"""
     return {**state, "final_audit_summary": summary}

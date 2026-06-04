@@ -47,6 +47,8 @@ class FinAuditApiTest(unittest.TestCase):
         self.assertIn("parsed_financial_data", payload)
         self.assertIn("final_report_markdown", payload)
         self.assertIn("n8n_result", payload)
+        self.assertIn("negotiation_trace", payload)
+        self.assertIn("llm_provider", payload)
 
     def test_audit_run_with_upload(self) -> None:
         file_bytes = Path("showcase/demo_inputs/test_audit.txt").read_bytes()
