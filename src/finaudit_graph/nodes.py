@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from .audit_agent import run_langchain_audit_agent
 from .knowledge import retrieve_audit_standards, retrieve_related_parties
@@ -107,15 +108,16 @@ def node_compliance_checker(state: AuditSystemState) -> AuditSystemState:
                 "recommendation": "抽查成本计算单、出入库记录和成本分摊规则。",
             }
         )
+
     return _finalize_negotiation(state, parsed, related_parties, standards, risks, "local_rules_negotiated")
 
 
 def _finalize_negotiation(
     state: AuditSystemState,
-    parsed: dict,
-    related_parties: list[dict],
-    standards: list[dict],
-    risks: list[dict],
+    parsed: dict[str, Any],
+    related_parties: list[dict[str, Any]],
+    standards: list[dict[str, Any]],
+    risks: list[dict[str, Any]],
     provider: str,
 ) -> AuditSystemState:
     negotiated = run_multi_agent_negotiation(risks, parsed, related_parties, standards)
@@ -128,10 +130,10 @@ def _finalize_negotiation(
 
 
 def _try_deepseek_risk_analysis(
-    parsed: dict,
-    related_parties: list[dict],
-    standards: list[dict],
-) -> list[dict] | None:
+    parsed: dict[str, Any],
+    related_parties: list[dict[str, Any]],
+    standards: list[dict[str, Any]],
+) -> list[dict[str, Any]] | None:
     """Call DeepSeek for structured risk analysis when API settings exist."""
     client = DeepSeekClient()
     if not client.configured:
@@ -142,8 +144,8 @@ def _try_deepseek_risk_analysis(
             "role": "system",
             "content": (
                 "你是财务审计与合规审查专家。只返回 JSON，不要 Markdown。"
-                "JSON 格式必须为 {\"risks\": [{\"risk_type\": str, \"severity\": str, "
-                "\"evidence\": str, \"audit_basis\": str, \"recommendation\": str}]}。"
+                'JSON 格式必须是 {"risks": [{"risk_type": str, "severity": str, '
+                '"evidence": str, "audit_basis": str, "recommendation": str}]}。'
             ),
         },
         {
@@ -153,7 +155,7 @@ def _try_deepseek_risk_analysis(
                     "parsed_financial_data": parsed,
                     "related_parties": related_parties,
                     "audit_standards": standards,
-                    "task": "识别 3 到 5 个审计风险点，风险等级只能使用 高 中 低。",
+                    "task": "识别 3 到 5 个审计风险点，风险等级只能使用 高 / 中 / 低。",
                 },
                 ensure_ascii=False,
             ),
@@ -211,6 +213,7 @@ def node_report_generator(state: AuditSystemState) -> AuditSystemState:
 - 原始文件：{parsed.get("source_file", "未提供")}
 
 ## 二、核心财务线索
+
 - 营业收入增长率：{parsed.get("revenue_growth_rate", "N/A")}%
 - 经营现金流增长率：{parsed.get("operating_cashflow_growth_rate", "N/A")}%
 - 毛利率：{parsed.get("gross_margin_rate", "N/A")}%
@@ -225,5 +228,6 @@ def node_report_generator(state: AuditSystemState) -> AuditSystemState:
 {chr(10).join(risk_lines)}
 
 ## 五、综合结论
+
 系统建议将该企业列为高优先级复核对象，重点围绕收入真实性、关联交易披露充分性、成本结转完整性和内控审批链条开展进一步审计程序。"""
     return {**state, "final_audit_summary": summary}

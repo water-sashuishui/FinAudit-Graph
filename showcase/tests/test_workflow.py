@@ -16,7 +16,7 @@ from finaudit_graph.automation import build_n8n_payload, send_to_n8n
 from finaudit_graph.eval import run_eval
 from finaudit_graph.knowledge import retrieve_audit_standards
 from finaudit_graph.llm import DeepSeekClient, normalize_chat_completions_url
-from finaudit_graph.lora import inspect_lora_artifact
+from finaudit_graph.lora import get_lora_runtime_status, inspect_lora_artifact
 from finaudit_graph.negotiation import run_multi_agent_negotiation
 from finaudit_graph.reporting import build_full_report_markdown
 from finaudit_graph.security import detect_prompt_injection, sanitize_text
@@ -51,6 +51,13 @@ class FinAuditWorkflowTest(unittest.TestCase):
         self.assertEqual(summary["base_model"], "Qwen2.5-1.5B-Instruct")
         self.assertEqual(summary["train_samples"], 80)
         self.assertIn("adapter_model.safetensors", summary["files"])
+
+    def test_lora_runtime_status_reports_optional_runtime(self) -> None:
+        status = get_lora_runtime_status()
+
+        self.assertIn("runtime_ready", status)
+        self.assertIn("enabled", status)
+        self.assertIn("reason", status)
 
     def test_full_report_markdown_contains_key_sections(self) -> None:
         state = run_demo()

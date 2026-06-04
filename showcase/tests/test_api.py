@@ -66,7 +66,7 @@ class FinAuditApiTest(unittest.TestCase):
         response = self.client.post("/api/audit/run")
 
         self.assertEqual(400, response.status_code)
-        self.assertIn("Provide either an uploaded file or a document_path", response.json()["detail"])
+        self.assertIn("请上传文件", response.json()["detail"])
 
     def test_audit_run_rejects_invalid_path(self) -> None:
         response = self.client.post("/api/audit/run", data={"document_path": "showcase/demo_inputs/missing.txt"})
