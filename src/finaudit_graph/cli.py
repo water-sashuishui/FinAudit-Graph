@@ -56,6 +56,7 @@ def main() -> None:
             json.dumps(
                 {
                     "vector_store": str(DEFAULT_VECTOR_STORE_PATH),
+                    "vector_db": "chroma",
                     "embedding_model": "local_hashing_v1",
                     "records": len(records),
                 },

@@ -313,18 +313,18 @@ class FinAuditWorkflowTest(unittest.TestCase):
         from finaudit_graph.vector_store import LocalVectorStore
 
         with tempfile.TemporaryDirectory() as tmp_dir:
-            store_path = Path(tmp_dir) / "vector_store.json"
+            store_path = Path(tmp_dir) / "chroma_db"
             store = LocalVectorStore(store_path=store_path)
             records = store.build_from_json(Path("data/rag/audit_standards.json"))
 
-            self.assertTrue(store_path.exists())
+            self.assertTrue((store_path / "manifest.json").exists())
             self.assertEqual(4, len(records))
             self.assertTrue(all(record["vector"] for record in records))
             self.assertEqual("local_hashing_v1", records[0]["embedding_model"])
 
     def test_audit_standard_retrieval_uses_vector_store_before_keyword_fallback(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
-            store_path = Path(tmp_dir) / "vector_store.json"
+            store_path = Path(tmp_dir) / "chroma_db"
 
             results = retrieve_audit_standards(
                 ["销售回款与应收账款异常增长，需要关注收入截止性"],
@@ -334,7 +334,7 @@ class FinAuditWorkflowTest(unittest.TestCase):
 
         self.assertGreaterEqual(len(results), 1)
         self.assertEqual("revenue-recognition", results[0]["id"])
-        self.assertEqual("vector", results[0]["retrieval_mode"])
+        self.assertEqual("chroma_vector", results[0]["retrieval_mode"])
         self.assertGreater(results[0]["similarity"], 0)
 
 def _write_minimal_xlsx(path: Path, rows: list[list[str]]) -> None:

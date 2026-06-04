@@ -1,0 +1,8 @@
+{
+  "vector_db": "chroma",
+  "embedding_model": "local_hashing_v1",
+  "dimensions": 384,
+  "source_path": "data/rag/audit_standards.json",
+  "record_count": 4,
+  "collection_name": "audit_standards"
+}

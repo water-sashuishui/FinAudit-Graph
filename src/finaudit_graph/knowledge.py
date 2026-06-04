@@ -93,7 +93,7 @@ def retrieve_audit_standards(
     limit: int = 3,
     vector_store_path: Path | str = DEFAULT_VECTOR_STORE_PATH,
 ) -> list[dict[str, Any]]:
-    """Retrieve audit standards from the local vector DB, then keyword fallback."""
+    """Retrieve audit standards from the Chroma vector DB, then keyword fallback."""
     if not AUDIT_STANDARD_PATH.exists():
         return []
 
