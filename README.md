@@ -1,27 +1,23 @@
 # FinAudit-Graph
 
-FinAudit-Graph 是一个面向毕业设计演示的智能财务助手 / 审计分析 MVP。  
+FinAudit-Graph 是一个智能财务助手 / 审计分析 MVP。  
 当前系统采用 **FastAPI + Streamlit 共存** 的方式：
 
 - `FastAPI` 作为后端服务与接口层
 - `Streamlit` 作为演示前端，负责上传材料、触发分析和展示结果
 
-## 当前能力
+## 核心功能
 
-- 多格式材料解析：`txt / pdf / docx / xlsx / xls / csv`
-- 审计准则 RAG：基于 `Chroma` 本地持久化向量库
-- 财务风险识别：`LangGraph` 四节点工作流
-- 多智能体协商：`Risk / Evidence / Recommendation`
-- 报告生成：`Markdown / DOCX`
-- 自动化记录：`N8N dry-run / webhook`
-- 评测与安全防护：
-  - 本地评测集
-  - PII 脱敏
-  - Prompt Injection 拦截
-- LoRA 微调成果展示：
-  - 保留在 `showcase/lora_adapter/`
-  - 用于答辩展示与训练成果说明
-  - **不参与当前主流程推理**
+FinAudit-Graph 围绕一条端到端审计主流程展开：
+
+```text
+财务材料输入 → 智能审计分析 → 风险识别 → 审计报告输出
+```
+
+- 财务材料输入：支持上传 `txt / pdf / docx / xlsx / xls / csv` 等格式的财务材料，并提取关键财务指标。
+- 智能审计分析：结合 `LangGraph` 工作流、`DeepSeek API`、审计准则 RAG 和关联方图谱线索，对材料进行自动化分析。
+- 风险识别：识别收入异常、现金流异常、应收账款异常、毛利率异常、关联方交易等潜在审计风险。
+- 审计报告输出：自动生成结构化审计结论，并支持输出 `Markdown / DOCX` 报告。
 
 ## 项目结构
 

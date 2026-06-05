@@ -10,6 +10,7 @@ SUPPORTED_TYPES = ["pdf", "docx", "txt", "xlsx", "xls", "csv"]
 
 
 def build_api_url(path: str) -> str:
+    """拼接后端 API 地址，避免页面代码到处重复处理斜杠。"""
     return f"{API_BASE_URL.rstrip('/')}{path}"
 
 
@@ -33,6 +34,7 @@ run_disabled = uploaded_file is None
 if st.button("开始审计分析", type="primary", use_container_width=True, disabled=run_disabled):
     try:
         with st.spinner("正在分析材料，请稍候..."):
+            # Streamlit 只负责上传和展示，实际审计流程统一交给 FastAPI 服务层。
             response = requests.post(
                 build_api_url("/api/audit/run"),
                 files={
@@ -61,10 +63,12 @@ if st.button("开始审计分析", type="primary", use_container_width=True, dis
             else:
                 left, right = st.columns([2, 1])
                 with left:
+                    # 报告正文直接使用后端生成的 Markdown，保持 CLI/API/前端展示一致。
                     st.subheader("审计报告")
                     st.markdown(payload.get("final_report_markdown", ""))
 
                 with right:
+                    # 右侧保留结构化摘要，便于演示时快速检查状态和报告落盘路径。
                     st.subheader("处理结果")
                     st.json(
                         {

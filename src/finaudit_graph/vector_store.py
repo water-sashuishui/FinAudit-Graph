@@ -24,10 +24,12 @@ class LocalVectorStore:
         store_path: Path | str = DEFAULT_VECTOR_STORE_PATH,
         dimensions: int = VECTOR_DIMENSIONS,
     ) -> None:
+        """保存向量库路径和 embedding 维度配置。"""
         self.store_path = Path(store_path)
         self.dimensions = dimensions
 
     def build_from_json(self, source_path: Path | str) -> list[dict[str, Any]]:
+        """从审计准则 JSON 构建持久化 Chroma 集合。"""
         source = Path(source_path)
         standards = json.loads(source.read_text(encoding="utf-8"))
         records = [self._record_from_standard(item) for item in standards]
@@ -57,6 +59,7 @@ class LocalVectorStore:
         return records
 
     def search(self, query: str, limit: int = 3) -> list[dict[str, Any]]:
+        """按查询文本检索最相近的审计准则，并返回带相似度的结果。"""
         client = self._client()
         try:
             collection = self._get_collection(client)
@@ -95,6 +98,7 @@ class LocalVectorStore:
             client.close()
 
     def ensure_built(self, source_path: Path | str) -> None:
+        """确保向量库已存在且 manifest 与当前配置一致，否则自动重建。"""
         source = Path(source_path)
         manifest = self._load_manifest()
         if not manifest:
@@ -123,6 +127,7 @@ class LocalVectorStore:
             self.build_from_json(source)
 
     def embed(self, text: str) -> list[float]:
+        """把文本转换为可复现的 hashing 向量，适合离线演示环境。"""
         # 采用可复现的本地向量化方案，保证答辩和离线环境也能稳定运行。
         vector = [0.0] * self.dimensions
         for token in tokenize(text):
@@ -132,6 +137,7 @@ class LocalVectorStore:
         return normalize(vector)
 
     def _client(self):
+        """创建 Chroma 持久化客户端，并在缺依赖时给出明确错误。"""
         try:
             import chromadb
         except ImportError as exc:
@@ -141,6 +147,7 @@ class LocalVectorStore:
         return chromadb.PersistentClient(path=str(self.store_path))
 
     def _get_collection(self, client):
+        """获取或创建统一的审计准则集合。"""
         return client.get_or_create_collection(
             name=COLLECTION_NAME,
             metadata={
@@ -152,6 +159,7 @@ class LocalVectorStore:
         )
 
     def _reset_collection(self, client) -> None:
+        """删除旧集合和 manifest，为完整重建索引做准备。"""
         try:
             client.delete_collection(COLLECTION_NAME)
         except Exception:
@@ -159,9 +167,11 @@ class LocalVectorStore:
         self._delete_manifest()
 
     def _manifest_path(self) -> Path:
+        """返回本地索引 manifest 文件路径。"""
         return self.store_path / "manifest.json"
 
     def _write_manifest(self, source: Path, record_count: int) -> None:
+        """写入索引元信息，用于后续判断是否需要重建。"""
         payload = {
             "vector_db": VECTOR_DB_ENGINE,
             "embedding_model": EMBEDDING_MODEL,
@@ -173,17 +183,20 @@ class LocalVectorStore:
         self._manifest_path().write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
     def _load_manifest(self) -> dict[str, Any]:
+        """读取索引 manifest；不存在时返回空字典。"""
         manifest_path = self._manifest_path()
         if not manifest_path.exists():
             return {}
         return json.loads(manifest_path.read_text(encoding="utf-8"))
 
     def _delete_manifest(self) -> None:
+        """删除 manifest，配合集合重建保持状态一致。"""
         manifest_path = self._manifest_path()
         if manifest_path.exists():
             manifest_path.unlink()
 
     def _record_from_standard(self, item: dict[str, Any]) -> dict[str, Any]:
+        """把一条审计准则转换为 Chroma 可写入的标准记录。"""
         keywords = item.get("keywords", [])
         embedding_text = "\n".join(
             [
@@ -202,11 +215,13 @@ class LocalVectorStore:
         }
 
     def clear(self) -> None:
+        """清空本地向量库目录，主要用于测试或手动重置。"""
         if self.store_path.exists():
             shutil.rmtree(self.store_path)
 
     @staticmethod
     def _load_keywords(value: str) -> list[str]:
+        """从 metadata 中恢复关键词列表，异常时返回空列表。"""
         try:
             loaded = json.loads(value)
         except json.JSONDecodeError:
@@ -217,6 +232,7 @@ class LocalVectorStore:
 
 
 def tokenize(text: str) -> list[str]:
+    """为 hashing embedding 生成中英文混合 token。"""
     # 中文按字/2-gram/3-gram 切片，英文和数字按 token 保留，兼顾中英混合材料。
     cleaned = re.sub(r"\s+", "", text.lower())
     tokens = re.findall(r"[a-z0-9_]+", text.lower())
@@ -230,6 +246,7 @@ def tokenize(text: str) -> list[str]:
 
 
 def normalize(vector: list[float]) -> list[float]:
+    """对向量做 L2 归一化，零向量保持原样。"""
     norm = math.sqrt(sum(value * value for value in vector))
     if norm == 0:
         return vector

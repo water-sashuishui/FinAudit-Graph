@@ -22,7 +22,11 @@ def execute_audit(
     output_dir: str | Path = "outputs",
     request_id: str | None = None,
 ) -> dict[str, Any]:
-    """Run the end-to-end audit workflow and normalize the result shape."""
+    """执行端到端审计，并把工作流状态整理成 API/前端统一消费的结果结构。
+
+    这里是服务层的主入口：先校验文件和安全风险，再运行工作流，最后补齐
+    报告、自动化结果、告警和安全标记。安全拦截会直接返回人工复核状态。
+    """
     normalized_path = validate_document_path(document_path)
     security_result = inspect_document_security(normalized_path)
 
@@ -69,6 +73,7 @@ def execute_audit(
 
 
 def validate_document_path(document_path: str | Path) -> Path:
+    """校验输入文件是否存在且属于当前系统支持的审计材料格式。"""
     path = Path(document_path)
     if not path.exists():
         raise FileNotFoundError(f"Document not found: {path}")
@@ -83,6 +88,7 @@ def save_uploaded_document(
     *,
     raw_dir: str | Path = "data/raw",
 ) -> Path:
+    """保存上传文件到原始材料目录，并用 UUID 前缀避免同名文件覆盖。"""
     suffix = Path(filename).suffix.lower()
     if suffix not in SUPPORTED_DOCUMENT_SUFFIXES:
         raise ValueError(f"Unsupported file type: {suffix or '<none>'}")
@@ -95,6 +101,7 @@ def save_uploaded_document(
 
 
 def query_audit_standards(query: str, limit: int = 5) -> dict[str, Any]:
+    """封装审计准则检索结果，供 FastAPI 和其他调用方直接返回。"""
     return {
         "query": query,
         "limit": limit,
@@ -103,6 +110,7 @@ def query_audit_standards(query: str, limit: int = 5) -> dict[str, Any]:
 
 
 def rebuild_rag_index() -> dict[str, Any]:
+    """从本地审计准则 JSON 重建向量索引，并返回索引元信息。"""
     records = LocalVectorStore(DEFAULT_VECTOR_STORE_PATH).build_from_json(AUDIT_STANDARD_PATH)
     return {
         "vector_store": str(DEFAULT_VECTOR_STORE_PATH),
@@ -113,6 +121,7 @@ def rebuild_rag_index() -> dict[str, Any]:
 
 
 def build_config_status(settings: ProjectSettings | None = None) -> dict[str, Any]:
+    """汇总外部依赖配置状态，用于健康检查和演示页展示。"""
     current = settings or ProjectSettings.from_env()
     return {
         "deepseek_configured": bool(current.deepseek_api_key and current.audit_llm_model),
@@ -130,6 +139,7 @@ def build_config_status(settings: ProjectSettings | None = None) -> dict[str, An
 
 
 def collect_warnings(workflow_state: dict[str, Any], security_result: dict[str, Any]) -> list[str]:
+    """根据工作流输出和安全检查结果生成可读告警列表。"""
     warnings: list[str] = []
     parsed = workflow_state.get("parsed_financial_data", {})
     if workflow_state.get("error_message"):

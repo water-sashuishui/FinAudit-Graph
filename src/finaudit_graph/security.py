@@ -25,6 +25,7 @@ PROMPT_INJECTION_PATTERNS = [
 
 
 def read_source_text(document_path: str | Path) -> str:
+    """读取原始文本供安全扫描使用；无法解析的二进制文件返回空字符串。"""
     path = Path(document_path)
     if not path.exists():
         return ""
@@ -38,6 +39,7 @@ def read_source_text(document_path: str | Path) -> str:
 
 
 def sanitize_text(text: str) -> tuple[str, list[dict[str, Any]]]:
+    """按预设正则脱敏手机号、邮箱、身份证号和银行卡号等敏感字段。"""
     redactions: list[dict[str, Any]] = []
     sanitized = text
     for label, pattern in PII_PATTERNS.items():
@@ -50,6 +52,7 @@ def sanitize_text(text: str) -> tuple[str, list[dict[str, Any]]]:
 
 
 def detect_prompt_injection(text: str) -> list[str]:
+    """检测材料中可能试图影响模型判断的提示注入语句。"""
     findings: list[str] = []
     for pattern in PROMPT_INJECTION_PATTERNS:
         if pattern.search(text):
@@ -58,6 +61,7 @@ def detect_prompt_injection(text: str) -> list[str]:
 
 
 def inspect_document_security(document_path: str | Path) -> dict[str, Any]:
+    """汇总文档安全扫描结果，决定是否阻断自动审计流程。"""
     text = read_source_text(document_path)
     sanitized_text, redactions = sanitize_text(text)
     injection_hits = detect_prompt_injection(text)

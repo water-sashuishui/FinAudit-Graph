@@ -10,6 +10,7 @@ from .state import AuditSystemState
 # 既能生成 Markdown 版本给前端/CLI 展示，也能继续落盘为 DOCX 报告。
 
 def _safe_filename(value: str) -> str:
+    """把企业名等显示文本转换成安全的 ASCII 文件名片段。"""
     cleaned = []
     previous_was_separator = False
     aliases = {
@@ -145,6 +146,7 @@ def save_docx_report(state: AuditSystemState, output_dir: str | Path = "outputs"
     path = target_dir / f"{safe_name}_audit_report.docx"
 
     def set_font(paragraph, east_asia: str = "微软雅黑") -> None:
+        """统一设置中英文字体，避免 Word 默认字体导致中文显示不一致。"""
         for run in paragraph.runs:
             run.font.name = "Arial"
             run._element.get_or_add_rPr().get_or_add_rFonts().set(qn("w:eastAsia"), east_asia)
@@ -184,6 +186,7 @@ def save_docx_report(state: AuditSystemState, output_dir: str | Path = "outputs"
 
 
 def save_reports(state: AuditSystemState, output_dir: str | Path = "outputs") -> dict[str, str | None]:
+    """同时保存 Markdown 和可选 DOCX 报告，并返回落盘路径。"""
     markdown_path = save_markdown_report(state, output_dir)
     docx_path = save_docx_report(state, output_dir)
     return {

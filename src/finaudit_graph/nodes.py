@@ -120,6 +120,7 @@ def _finalize_negotiation(
     risks: list[dict[str, Any]],
     provider: str,
 ) -> AuditSystemState:
+    """统一对候选风险做协商收敛，并写回工作流状态。"""
     negotiated = run_multi_agent_negotiation(risks, parsed, related_parties, standards)
     return {
         **state,

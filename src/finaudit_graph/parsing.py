@@ -94,6 +94,7 @@ def read_document_text(path: str | Path) -> str:
 
 
 def _extract_percent(text: str, labels: list[str]) -> float | None:
+    """按标签名从文本中提取百分比数值。"""
     for label in labels:
         pattern = rf"{re.escape(label)}\s*[：:]\s*(-?\d+(?:\.\d+)?)\s*%?"
         match = re.search(pattern, text)
@@ -103,6 +104,7 @@ def _extract_percent(text: str, labels: list[str]) -> float | None:
 
 
 def _extract_year(text: str) -> int | None:
+    """从常见年度标签后提取 20xx 年份。"""
     match = re.search(r"(?:报告年度|年度|年份)\s*[：:]\s*(20\d{2})", text)
     if match:
         return int(match.group(1))
@@ -110,6 +112,7 @@ def _extract_year(text: str) -> int | None:
 
 
 def _extract_company(text: str) -> str | None:
+    """从文本中识别被审计企业名称。"""
     patterns = [
         r"(?:被审计企业|企业名称|公司名称)\s*[：:]\s*([^\n\r，,。]+)",
         r"([\u4e00-\u9fa5A-Za-z0-9（）()]{4,40}(?:股份有限公司|有限公司|集团有限公司))",
@@ -122,6 +125,7 @@ def _extract_company(text: str) -> str | None:
 
 
 def read_spreadsheet_cells(path: str | Path) -> list[dict[str, Any]]:
+    """把 CSV/XLSX/XLS 统一读取成 sheet、row、col、value 单元格列表。"""
     # 不同表格格式统一转成 sheet / row / col / value 四元组，后面语义对齐只关心这一层。
     spreadsheet_path = Path(path)
     suffix = spreadsheet_path.suffix.lower()
@@ -135,12 +139,14 @@ def read_spreadsheet_cells(path: str | Path) -> list[dict[str, Any]]:
 
 
 def spreadsheet_cells_to_text(cells: list[dict[str, Any]]) -> str:
+    """把单元格列表展开为带位置标识的文本，供正则解析复用。"""
     return "\n".join(
         f"{cell['sheet']}!{column_name(cell['col'])}{cell['row']}: {cell['value']}" for cell in cells if cell["value"]
     )
 
 
 def _read_csv_cells(path: Path) -> list[dict[str, Any]]:
+    """读取 CSV 非空单元格。"""
     cells: list[dict[str, Any]] = []
     with path.open("r", encoding="utf-8-sig", newline="") as handle:
         reader = csv.reader(handle)
@@ -160,6 +166,7 @@ def _read_csv_cells(path: Path) -> list[dict[str, Any]]:
 
 
 def _read_xlsx_cells(path: Path) -> list[dict[str, Any]]:
+    """用标准 xlsx zip/xml 结构读取非空单元格，减少额外依赖。"""
     cells: list[dict[str, Any]] = []
     try:
         with zipfile.ZipFile(path) as archive:
@@ -183,6 +190,7 @@ def _read_xlsx_cells(path: Path) -> list[dict[str, Any]]:
 
 
 def _read_legacy_excel_cells(path: Path) -> list[dict[str, Any]]:
+    """读取旧版 xls 文件；pandas/xlrd 不可用时返回空列表。"""
     try:
         import pandas as pd
     except ImportError:
@@ -213,6 +221,7 @@ def _read_legacy_excel_cells(path: Path) -> list[dict[str, Any]]:
 
 
 def _read_shared_strings(archive: zipfile.ZipFile) -> list[str]:
+    """读取 xlsx sharedStrings.xml 中的共享字符串表。"""
     if "xl/sharedStrings.xml" not in archive.namelist():
         return []
     root = ElementTree.fromstring(archive.read("xl/sharedStrings.xml"))
@@ -224,6 +233,7 @@ def _read_shared_strings(archive: zipfile.ZipFile) -> list[str]:
 
 
 def _read_workbook_sheet_names(archive: zipfile.ZipFile) -> list[str]:
+    """读取 xlsx 工作簿里的 sheet 名称。"""
     if "xl/workbook.xml" not in archive.namelist():
         return []
     root = ElementTree.fromstring(archive.read("xl/workbook.xml"))
@@ -231,6 +241,7 @@ def _read_workbook_sheet_names(archive: zipfile.ZipFile) -> list[str]:
 
 
 def _xlsx_cell_value(cell: ElementTree.Element, shared_strings: list[str]) -> str:
+    """解析 xlsx 单元格真实文本，兼容 inlineStr 和 shared string。"""
     cell_type = cell.attrib.get("t")
     if cell_type == "inlineStr":
         return "".join(node.text or "" for node in cell.findall(".//{*}t")).strip()
@@ -248,6 +259,7 @@ def _xlsx_cell_value(cell: ElementTree.Element, shared_strings: list[str]) -> st
 
 
 def parse_cell_reference(reference: str) -> tuple[int, int]:
+    """把 A1/B2 这类引用转换成 1-based 行列坐标。"""
     match = re.match(r"([A-Z]+)(\d+)", reference)
     if not match:
         return 0, 0
@@ -258,6 +270,7 @@ def parse_cell_reference(reference: str) -> tuple[int, int]:
 
 
 def column_name(index: int) -> str:
+    """把 1-based 列号转换成 Excel 列名。"""
     name = ""
     while index > 0:
         index, remainder = divmod(index - 1, 26)
@@ -266,6 +279,7 @@ def column_name(index: int) -> str:
 
 
 def semantically_align_financial_fields(cells: list[dict[str, Any]]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """根据字段别名在表格中定位标签，并抽取相邻或同格的财务指标值。"""
     cell_map = {(cell["sheet"], cell["row"], cell["col"]): cell for cell in cells}
     parsed: dict[str, Any] = {}
     evidence: dict[str, Any] = {}
@@ -295,11 +309,13 @@ def semantically_align_financial_fields(cells: list[dict[str, Any]]) -> tuple[di
 
 
 def label_matches_alias(label: str, aliases: list[str]) -> bool:
+    """判断表格标签是否命中任一字段别名。"""
     normalized_label = normalize_label(label)
     return any(normalize_label(alias) in normalized_label for alias in aliases)
 
 
 def normalize_label(value: str) -> str:
+    """去除空格、括号、分隔符等噪声，提升标签匹配容错率。"""
     return re.sub(r"[\s：:（）()\[\]【】_\-/%]+", "", value.lower())
 
 
@@ -308,6 +324,7 @@ def find_neighbor_value(
     label_cell: dict[str, Any],
     cell_map: dict[tuple[str, int, int], dict[str, Any]],
 ) -> tuple[Any | None, dict[str, Any]]:
+    """在标签右侧、下方等常见财务表布局位置寻找字段值。"""
     # 这里优先搜索“右侧一格、下方一格”等常见财务表布局，避免做过重的表格推理。
     offsets = [(0, 1), (1, 0), (0, 2), (2, 0), (0, 3), (3, 0), (1, 1)]
     for row_delta, col_delta in offsets:
@@ -327,6 +344,7 @@ def find_neighbor_value(
 
 
 def extract_value_for_field(field: str, raw_value: str) -> Any | None:
+    """按字段类型把原始文本转换为公司名、年度或百分比数值。"""
     if field == "company_name":
         company = _extract_company(raw_value)
         if company:

@@ -41,6 +41,8 @@ app = FastAPI(
 
 
 class RagQueryRequest(BaseModel):
+    """审计准则检索请求体。"""
+
     query: str = Field(
         ...,
         min_length=1,
@@ -63,6 +65,7 @@ class RagQueryRequest(BaseModel):
     description="用于确认 FastAPI 服务是否已经正常启动。",
 )
 def health() -> dict[str, str]:
+    """返回最小健康状态，用于负载均衡或启动检查。"""
     return {"status": "ok"}
 
 
@@ -73,6 +76,7 @@ def health() -> dict[str, str]:
     description="返回 DeepSeek、Neo4j、N8N、飞书等关键配置是否已就绪。",
 )
 def config_status() -> dict[str, object]:
+    """返回关键外部服务配置是否可用。"""
     return build_config_status()
 
 
@@ -83,6 +87,7 @@ def config_status() -> dict[str, object]:
     description="根据自然语言问题查询本地 Chroma 向量库中的审计准则依据。",
 )
 def rag_query(payload: RagQueryRequest) -> dict[str, object]:
+    """执行审计准则 RAG 检索。"""
     return query_audit_standards(payload.query, payload.limit)
 
 
@@ -93,6 +98,7 @@ def rag_query(payload: RagQueryRequest) -> dict[str, object]:
     description="从本地审计准则 JSON 数据源重新构建 Chroma 向量索引。",
 )
 def rag_rebuild() -> dict[str, object]:
+    """重建本地审计准则向量索引。"""
     return rebuild_rag_index()
 
 
@@ -119,11 +125,13 @@ async def audit_run(
         description="是否将审计结果额外保存为 Markdown / DOCX 报告文件。",
     ),
 ) -> dict[str, object]:
+    """接收上传文件或本地路径，触发完整审计流程。"""
     if file is None and not document_path:
         raise HTTPException(status_code=400, detail="请上传文件，或提供 document_path。")
 
     try:
         if file is not None:
+            # 上传文件先落入 data/raw，再复用 document_path 模式的服务层逻辑。
             file_bytes = await file.read()
             if not file_bytes:
                 raise HTTPException(status_code=400, detail="上传文件为空。")

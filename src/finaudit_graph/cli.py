@@ -10,7 +10,7 @@ from .settings import ProjectSettings
 
 
 def main() -> None:
-    """Run project readiness checks or the audit workflow demo."""
+    """命令行入口：按参数选择演示审计、RAG、LoRA 摘要或本地评估任务。"""
     parser = argparse.ArgumentParser(description="FinAudit-Graph command line tools")
     parser.add_argument(
         "--demo",
@@ -53,6 +53,7 @@ def main() -> None:
     )
     args = parser.parse_args()
 
+    # CLI 只做参数分发；真实业务逻辑都复用 service/eval/lora 等模块，避免入口间逻辑漂移。
     settings = ProjectSettings.from_env()
     if args.lora_summary:
         print(json.dumps(inspect_lora_artifact(), ensure_ascii=False, indent=2))

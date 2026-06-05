@@ -39,6 +39,7 @@ class ProjectSettings:
 
     @classmethod
     def from_env(cls) -> "ProjectSettings":
+        """从 .env 和系统环境变量创建运行配置。"""
         _load_dotenv_if_present()
         return cls(
             neo4j_uri=os.getenv("NEO4J_URI", cls.neo4j_uri),

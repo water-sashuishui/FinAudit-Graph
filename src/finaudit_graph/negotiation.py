@@ -13,7 +13,11 @@ def run_multi_agent_negotiation(
     standards: list[dict[str, Any]],
     max_rounds: int = 2,
 ) -> dict[str, Any]:
-    """Run a bounded, structured negotiation over risk items."""
+    """对初始风险项执行有限轮多智能体协商，补强等级、证据和建议。
+
+    输入的风险可以来自 LangChain、DeepSeek 或本地规则。协商结果会补充
+    置信度、参与评审智能体和保留意见，便于报告端解释风险结论。
+    """
     normalized = [_normalize_risk(risk) for risk in risks]
     trace: list[dict[str, Any]] = []
     current = normalized
@@ -37,6 +41,7 @@ def _collect_round_proposals(
     related_parties: list[dict[str, Any]],
     standards: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
+    """收集一轮中风险、证据、整改建议三个评审角色的修改提案。"""
     proposals: list[dict[str, Any]] = []
     for risk in risks:
         proposals.extend(_risk_agent_review(round_index, risk, parsed, related_parties))
@@ -51,6 +56,7 @@ def _risk_agent_review(
     parsed: dict[str, Any],
     related_parties: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
+    """从财务指标和关联方线索角度判断风险等级是否需要上调。"""
     proposals: list[dict[str, Any]] = []
     risk_name = str(risk.get("risk_type", ""))
     revenue = float(parsed.get("revenue_growth_rate") or 0)
@@ -102,6 +108,7 @@ def _evidence_agent_review(
     related_parties: list[dict[str, Any]],
     standards: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
+    """检查风险证据和审计依据是否充分，并据此调整置信度。"""
     proposals: list[dict[str, Any]] = []
     risk_name = str(risk.get("risk_type", ""))
     evidence = str(risk.get("evidence", "")).strip()
@@ -154,6 +161,7 @@ def _evidence_agent_review(
 
 
 def _recommendation_agent_review(round_index: int, risk: dict[str, Any]) -> list[dict[str, Any]]:
+    """检查整改建议是否可执行；过短时给出通用补强建议。"""
     proposals: list[dict[str, Any]] = []
     risk_name = str(risk.get("risk_type", ""))
     recommendation = str(risk.get("recommendation", "")).strip()
@@ -174,6 +182,7 @@ def _recommendation_agent_review(round_index: int, risk: dict[str, Any]) -> list
 
 
 def _adjudicate(risks: list[dict[str, Any]], proposals: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """把各评审角色的提案合并回风险项，形成一轮协商后的结论。"""
     proposal_map: dict[str, list[dict[str, Any]]] = {}
     for proposal in proposals:
         proposal_map.setdefault(proposal["risk_type"], []).append(proposal)
@@ -207,12 +216,14 @@ def _adjudicate(risks: list[dict[str, Any]], proposals: list[dict[str, Any]]) ->
 
 
 def _needs_followup(risks: list[dict[str, Any]], round_index: int, max_rounds: int) -> bool:
+    """当仍有低置信度风险且未超过最大轮数时，继续下一轮协商。"""
     if round_index >= max_rounds:
         return False
     return any(risk.get("confidence", DEFAULT_CONFIDENCE) < 0.7 for risk in risks)
 
 
 def _normalize_risk(risk: dict[str, Any]) -> dict[str, Any]:
+    """补齐协商流程依赖的默认字段，避免上游风险来源格式不一致。"""
     normalized = dict(risk)
     normalized.setdefault("confidence", DEFAULT_CONFIDENCE)
     normalized.setdefault("disagreement_notes", [])
@@ -232,6 +243,7 @@ def _proposal(
     proposed_recommendation: str | None = None,
     disagreement_note: str | None = None,
 ) -> dict[str, Any]:
+    """构造单个评审角色的标准化提案对象。"""
     return {
         "reviewer": reviewer,
         "round": round_index,
@@ -245,10 +257,12 @@ def _proposal(
 
 
 def _max_severity(left: str, right: str) -> str:
+    """返回两个风险等级中更高的一个。"""
     return left if SEVERITY_ORDER.get(left, 0) >= SEVERITY_ORDER.get(right, 0) else right
 
 
 def _unique_list(items: list[str]) -> list[str]:
+    """按原始顺序去重，保留第一次出现的保留意见。"""
     seen: set[str] = set()
     result: list[str] = []
     for item in items:

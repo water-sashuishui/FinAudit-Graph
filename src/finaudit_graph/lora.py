@@ -16,10 +16,12 @@ REQUIRED_LORA_FILES = {
 
 
 def _read_json(path: Path) -> dict[str, Any]:
+    """读取 LoRA 产物元数据，兼容带 BOM 的 JSON 文件。"""
     return json.loads(path.read_text(encoding="utf-8-sig"))
 
 
 def _module_available(name: str) -> bool:
+    """检查可选推理依赖是否安装，用于解释 LoRA 当前不可用原因。"""
     return importlib.util.find_spec(name) is not None
 
 
@@ -52,6 +54,7 @@ def get_lora_runtime_status(
     settings: ProjectSettings | None = None,
     artifact_dir: str | Path | None = None,
 ) -> dict[str, Any]:
+    """检查 LoRA 风险助手的开关、产物文件、基础模型和依赖是否齐备。"""
     current = settings or ProjectSettings.from_env()
     target_dir = Path(artifact_dir or getattr(current, "lora_artifact_dir", "showcase/lora_adapter"))
 
@@ -111,6 +114,7 @@ def get_lora_runtime_status(
 
 @lru_cache(maxsize=1)
 def _load_lora_generator(base_model_path: str, artifact_dir: str) -> tuple[Any, Any]:
+    """加载基础模型和 LoRA adapter；缓存后避免每次请求重复载入大模型。"""
     from peft import PeftModel
     from transformers import AutoModelForCausalLM, AutoTokenizer
 
@@ -122,6 +126,7 @@ def _load_lora_generator(base_model_path: str, artifact_dir: str) -> tuple[Any, 
 
 
 def _extract_json_object(text: str) -> dict[str, Any] | None:
+    """从模型输出中截取第一个 JSON 对象，兼容模型夹带说明文字的情况。"""
     start = text.find("{")
     end = text.rfind("}")
     if start == -1 or end == -1 or end <= start:
@@ -139,7 +144,11 @@ def run_lora_risk_assistant(
     *,
     settings: ProjectSettings | None = None,
 ) -> dict[str, Any]:
-    """Use the LoRA adapter as an optional first-pass risk classifier."""
+    """使用 LoRA adapter 做可选的首轮风险识别，失败时返回可解释状态。
+
+    该函数不会抛出推理环境缺失错误，而是把 disabled/failed 状态写入结果，
+    方便主审计流程继续走 DeepSeek、LangChain 或本地规则兜底。
+    """
     current = settings or ProjectSettings.from_env()
     status = get_lora_runtime_status(current)
     if not status["runtime_ready"]:

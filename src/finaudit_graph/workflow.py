@@ -15,9 +15,11 @@ class SequentialAuditWorkflow:
     """Fallback workflow used when LangGraph is not installed yet."""
 
     def __init__(self, nodes: list[Callable[[AuditSystemState], AuditSystemState]]) -> None:
+        """保存按顺序执行的节点列表。"""
         self._nodes = nodes
 
     def invoke(self, initial_state: AuditSystemState) -> AuditSystemState:
+        """按 LangGraph invoke 兼容接口顺序执行所有节点。"""
         state = initial_state
         for node in self._nodes:
             state = node(state)
@@ -59,6 +61,7 @@ def build_audit_workflow():
 
 
 def run_demo(raw_document_path: str = "showcase/demo_inputs/test_audit.txt") -> AuditSystemState:
+    """使用指定材料路径运行演示工作流。"""
     # demo 入口只负责准备初始状态，真正的执行顺序交给工作流本身。
     graph = build_audit_workflow()
     return graph.invoke({"raw_document_path": raw_document_path})

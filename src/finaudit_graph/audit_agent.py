@@ -133,6 +133,7 @@ def run_langchain_audit_agent(
 
 
 def _last_message_content(result: Any) -> str:
+    """从 LangChain invoke 结果中提取最后一条消息文本。"""
     messages = result.get("messages", []) if isinstance(result, dict) else []
     if not messages:
         return ""
@@ -144,6 +145,7 @@ def _last_message_content(result: Any) -> str:
 
 
 def _strip_json_fence(content: str) -> str:
+    """去掉模型可能包裹的 ```json 代码块，只保留 JSON 文本。"""
     stripped = content.strip()
     if stripped.startswith("```"):
         stripped = stripped.strip("`")

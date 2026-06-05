@@ -8,6 +8,7 @@ from .service import execute_audit
 
 
 def run_eval(dataset_path: str | Path) -> dict[str, Any]:
+    """运行本地评估集，统计风险召回、报告忠实度等演示级指标。"""
     dataset = json.loads(Path(dataset_path).read_text(encoding="utf-8"))
     cases = dataset.get("cases", [])
     results: list[dict[str, Any]] = []
@@ -16,6 +17,7 @@ def run_eval(dataset_path: str | Path) -> dict[str, Any]:
     faithful_reports = 0
 
     for case in cases:
+        # 每个 case 都走完整 service 入口，评估结果更接近真实 API/CLI 使用路径。
         result = execute_audit(case["document_path"])
         risks = result.get("audit_risks", [])
         risk_types = {item.get("risk_type") for item in risks}
