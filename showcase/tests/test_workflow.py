@@ -74,6 +74,9 @@ class FinAuditWorkflowTest(unittest.TestCase):
         self.assertIn("执行摘要", report)
         self.assertIn(state["parsed_financial_data"]["company_name"], report)
         self.assertIn("审计风险明细", report)
+        self.assertNotIn("自动化", report)
+        self.assertNotIn("Payload", report)
+        self.assertNotIn("N8N", report)
 
     def test_cli_lora_summary_prints_adapter_status(self) -> None:
         """CLI 的 LoRA 摘要命令应输出 adapter 和基础模型信息。"""
@@ -319,6 +322,66 @@ class FinAuditWorkflowTest(unittest.TestCase):
         self.assertEqual("semantic_table_alignment", parsed["extraction_method"])
         self.assertIn("revenue_growth_rate", parsed["extraction_evidence"])
 
+    def test_realistic_xlsx_parser_handles_multi_sheet_financial_statements(self) -> None:
+        """更接近真实财务报表的多 sheet XLSX 应能计算关键增长率。"""
+        from finaudit_graph.parsing import parse_financial_document
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            document_path = Path(tmp_dir) / "realistic_financial_report.xlsx"
+            _write_minimal_xlsx(
+                document_path,
+                {
+                    "封面": [
+                        ["财务审计资料包"],
+                        ["被审计单位", "远航智能制造有限公司"],
+                        ["报告年度", "2024"],
+                    ],
+                    "利润表": [
+                        ["编制单位：远航智能制造有限公司"],
+                        ["单位：万元"],
+                        ["项目", "本期金额", "上期金额"],
+                        ["一、营业收入", "12800", "10000"],
+                        ["减：营业成本", "7680", "6800"],
+                    ],
+                    "现金流量表": [
+                        ["单位：万元"],
+                        ["项目", "本期金额", "上期金额"],
+                        ["经营活动产生的现金流量净额", "720", "1000"],
+                    ],
+                    "资产负债表": [
+                        ["单位：万元"],
+                        ["项目", "期末余额", "期初余额"],
+                        ["应收账款", "4620", "3300"],
+                    ],
+                },
+            )
+
+            parsed = parse_financial_document(document_path)
+
+        self.assertEqual("远航智能制造有限公司", parsed["company_name"])
+        self.assertEqual(2024, parsed["reporting_year"])
+        self.assertEqual(28.0, parsed["revenue_growth_rate"])
+        self.assertEqual(-28.0, parsed["operating_cashflow_growth_rate"])
+        self.assertEqual(40.0, parsed["gross_margin_rate"])
+        self.assertEqual(40.0, parsed["accounts_receivable_growth_rate"])
+        self.assertEqual("financial_statement_analysis", parsed["extraction_method"])
+        self.assertIn("revenue_growth_rate", parsed["extraction_evidence"])
+
+    def test_unreadable_xlsx_does_not_look_like_successful_demo_parse(self) -> None:
+        """无法解析的真实文件不应被 demo 默认值伪装成完整提取成功。"""
+        from finaudit_graph.parsing import parse_financial_document
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            document_path = Path(tmp_dir) / "broken_financial_data.xlsx"
+            document_path.write_bytes(b"not a valid xlsx file")
+
+            parsed = parse_financial_document(document_path)
+
+        self.assertEqual("unreadable_or_empty", parsed["extraction_method"])
+        self.assertFalse(parsed["extraction_complete"])
+        self.assertIn("spreadsheet_no_cells_read", parsed["extraction_warnings"])
+        self.assertNotEqual("华辰智能装备股份有限公司", parsed.get("company_name"))
+
     def test_csv_document_parser_aligns_values_from_table_headers(self) -> None:
         """CSV 解析应能从表头和下一行值中抽取关键财务字段。"""
         from finaudit_graph.parsing import parse_financial_document
@@ -457,39 +520,61 @@ class FinAuditWorkflowTest(unittest.TestCase):
         self.assertIn("report_faithfulness", report)
 
 
-def _write_minimal_xlsx(path: Path, rows: list[list[str]]) -> None:
+def _write_minimal_xlsx(path: Path, rows: list[list[str]] | dict[str, list[list[str]]]) -> None:
     """写入最小 XLSX 结构，避免测试依赖 openpyxl 等额外库。"""
     def cell_name(row_index: int, col_index: int) -> str:
         """根据 0-based 行列坐标生成 Excel 单元格名称。"""
         return f"{chr(ord('A') + col_index)}{row_index + 1}"
 
-    sheet_rows = []
-    for row_index, row in enumerate(rows):
-        cells = []
-        for col_index, value in enumerate(rows[row_index]):
-            escaped = (
-                str(value)
-                .replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace('"', "&quot;")
-            )
-            cells.append(
-                f'<c r="{cell_name(row_index, col_index)}" t="inlineStr">'
-                f"<is><t>{escaped}</t></is></c>"
-            )
-        sheet_rows.append(f'<row r="{row_index + 1}">{"".join(cells)}</row>')
+    sheets = {"审计数据": rows} if isinstance(rows, list) else rows
 
-    sheet_xml = (
-        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-        f"<sheetData>{''.join(sheet_rows)}</sheetData>"
-        "</worksheet>"
-    )
+    def build_sheet_xml(sheet_rows_data: list[list[str]]) -> str:
+        sheet_rows = []
+        for row_index, row in enumerate(sheet_rows_data):
+            cells = []
+            for col_index, value in enumerate(row):
+                escaped = (
+                    str(value)
+                    .replace("&", "&amp;")
+                    .replace("<", "&lt;")
+                    .replace(">", "&gt;")
+                    .replace('"', "&quot;")
+                )
+                cells.append(
+                    f'<c r="{cell_name(row_index, col_index)}" t="inlineStr">'
+                    f"<is><t>{escaped}</t></is></c>"
+                )
+            sheet_rows.append(f'<row r="{row_index + 1}">{"".join(cells)}</row>')
+        return (
+            '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+            f"<sheetData>{''.join(sheet_rows)}</sheetData>"
+            "</worksheet>"
+        )
+
+    sheet_overrides = []
+    workbook_sheets = []
+    workbook_rels = []
+    for sheet_index, sheet_name in enumerate(sheets, start=1):
+        sheet_overrides.append(
+            f'<Override PartName="/xl/worksheets/sheet{sheet_index}.xml" '
+            'ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+        )
+        workbook_sheets.append(
+            f'<sheet name="{sheet_name}" sheetId="{sheet_index}" r:id="rId{sheet_index}"/>'
+        )
+        workbook_rels.append(
+            f'<Relationship Id="rId{sheet_index}" '
+            'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" '
+            f'Target="worksheets/sheet{sheet_index}.xml"/>'
+        )
+
     with zipfile.ZipFile(path, "w") as archive:
         archive.writestr(
             "[Content_Types].xml",
-            '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/></Types>',
+            '<?xml version="1.0" encoding="UTF-8"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+            + "".join(sheet_overrides)
+            + "</Types>",
         )
         archive.writestr(
             "_rels/.rels",
@@ -497,13 +582,18 @@ def _write_minimal_xlsx(path: Path, rows: list[list[str]]) -> None:
         )
         archive.writestr(
             "xl/workbook.xml",
-            '<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets><sheet name="审计数据" sheetId="1" r:id="rId1"/></sheets></workbook>',
+            '<?xml version="1.0" encoding="UTF-8"?><workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>'
+            + "".join(workbook_sheets)
+            + "</sheets></workbook>",
         )
         archive.writestr(
             "xl/_rels/workbook.xml.rels",
-            '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/></Relationships>',
+            '<?xml version="1.0" encoding="UTF-8"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            + "".join(workbook_rels)
+            + "</Relationships>",
         )
-        archive.writestr("xl/worksheets/sheet1.xml", sheet_xml)
+        for sheet_index, sheet_rows_data in enumerate(sheets.values(), start=1):
+            archive.writestr(f"xl/worksheets/sheet{sheet_index}.xml", build_sheet_xml(sheet_rows_data))
 
 
 if __name__ == "__main__":

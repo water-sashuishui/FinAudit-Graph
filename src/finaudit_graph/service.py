@@ -144,6 +144,8 @@ def collect_warnings(workflow_state: dict[str, Any], security_result: dict[str, 
     parsed = workflow_state.get("parsed_financial_data", {})
     if workflow_state.get("error_message"):
         warnings.append(str(workflow_state["error_message"]))
+    if parsed and not parsed.get("extraction_complete", True):
+        warnings.append("Financial document extraction is incomplete; review extraction_warnings before relying on risks.")
     if not parsed:
         warnings.append("No structured financial fields were extracted from the source document.")
     if not workflow_state.get("discovered_related_parties"):

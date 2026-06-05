@@ -95,7 +95,7 @@ def node_compliance_checker(state: AuditSystemState) -> AuditSystemState:
             },
         )
 
-    if parsed.get("gross_margin_rate", 0) > 55:
+    if (parsed.get("gross_margin_rate") or 0) > 55:
         risks.append(
             {
                 "risk_type": "成本结转异常",

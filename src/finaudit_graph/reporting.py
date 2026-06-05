@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
-from .automation import build_n8n_payload
 from .state import AuditSystemState
 
 # 本模块负责把工作流状态整理成“可交付物”：
@@ -35,7 +33,6 @@ def build_full_report_markdown(state: AuditSystemState) -> str:
     risks = state.get("audit_risks_found", [])
     high_risk_count = sum(1 for risk in risks if risk.get("severity") == "高")
     company_name = parsed.get("company_name", "未知企业")
-    payload = build_n8n_payload(state)
 
     risk_blocks = []
     for index, risk in enumerate(risks, start=1):
@@ -57,14 +54,6 @@ def build_full_report_markdown(state: AuditSystemState) -> str:
 
     key_clues = parsed.get("key_clues", [])
     clue_lines = [f"- {item}" for item in key_clues] or ["- 暂无关键线索。"]
-
-    payload_summary = {
-        "company_name": payload["company_name"],
-        "reporting_year": payload["reporting_year"],
-        "risk_count": payload["risk_count"],
-        "high_risk_count": payload["high_risk_count"],
-        "automation_mode": "dry-run 或真实 N8N webhook",
-    }
 
     return f"""# 企业合规风控审计报告
 
@@ -101,15 +90,9 @@ def build_full_report_markdown(state: AuditSystemState) -> str:
 
 {chr(10).join(risk_blocks)}
 
-## 七、自动化记录 Payload 摘要
+## 七、综合结论
 
-```json
-{json.dumps(payload_summary, ensure_ascii=False, indent=2)}
-```
-
-## 八、综合结论
-
-系统建议将 {company_name} 列为高优先级复核对象。当前 MVP 已经形成“材料输入、图谱线索、向量数据库 RAG 依据、风险判断、自动化 payload、报告输出”的端到端闭环；真实生产环境中仍需接入完整 PDF 解析、真实 Neo4j、生产级向量数据库、N8N 和飞书鉴权。
+系统建议将 {company_name} 列为高优先级复核对象。当前 MVP 已经形成“材料输入、图谱线索、向量数据库 RAG 依据、风险判断、报告输出”的端到端审计分析流程；真实生产环境中仍需接入完整 PDF 解析、真实 Neo4j 和生产级向量数据库。
 """
 
 
