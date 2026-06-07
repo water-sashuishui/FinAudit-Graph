@@ -3,10 +3,10 @@ from __future__ import annotations
 import argparse
 import json
 
-from .eval import run_eval
-from .lora import inspect_lora_artifact
-from .service import execute_audit, query_audit_standards, rebuild_rag_index
-from .settings import ProjectSettings
+from ..core.service import execute_audit, query_audit_standards, rebuild_rag_index
+from ..evaluation.eval import run_eval
+from ..intelligence.lora import inspect_lora_artifact
+from ..settings import ProjectSettings
 
 
 def main() -> None:
@@ -19,13 +19,13 @@ def main() -> None:
     )
     parser.add_argument(
         "--document",
-        default="showcase/demo_inputs/test_audit.txt",
+        default="data/demo_inputs/test_audit.txt",
         help="Path to a source audit document used by the demo workflow.",
     )
     parser.add_argument(
         "--save-report",
         action="store_true",
-        help="Save Markdown and optional DOCX reports into the outputs directory.",
+        help="Save Markdown and optional DOCX reports into the data/outputs directory.",
     )
     parser.add_argument(
         "--lora-summary",
@@ -48,7 +48,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--eval-dataset",
-        default="showcase/eval_dataset.json",
+        default="data/eval_dataset.json",
         help="Path to the local evaluation dataset JSON file.",
     )
     args = parser.parse_args()

@@ -36,6 +36,7 @@ class ProjectSettings:
     feishu_app_secret: str = ""
     feishu_base_app_token: str = ""
     feishu_table_id: str = ""
+    audit_review_email: str = ""
 
     @classmethod
     def from_env(cls) -> "ProjectSettings":
@@ -53,4 +54,5 @@ class ProjectSettings:
             feishu_app_secret=os.getenv("FEISHU_APP_SECRET", cls.feishu_app_secret),
             feishu_base_app_token=os.getenv("FEISHU_BASE_APP_TOKEN", cls.feishu_base_app_token),
             feishu_table_id=os.getenv("FEISHU_TABLE_ID", cls.feishu_table_id),
+            audit_review_email=os.getenv("AUDIT_REVIEW_EMAIL", cls.audit_review_email),
         )

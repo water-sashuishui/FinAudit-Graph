@@ -2,14 +2,14 @@
   "cases": [
     {
       "case_id": "demo_txt_risk_case",
-      "document_path": "showcase/demo_inputs/test_audit.txt",
+      "document_path": "data/demo_inputs/test_audit.txt",
       "expected_risk_types": ["虚增收入", "内控缺陷"],
       "expected_rag_ids": ["revenue-recognition", "internal-control"],
       "expected_report_keywords": ["测试科技有限公司", "虚增收入", "内控缺陷"]
     },
     {
       "case_id": "demo_xlsx_risk_case",
-      "document_path": "showcase/demo_inputs/sample_financial_data.xlsx",
+      "document_path": "data/demo_inputs/sample_financial_data.xlsx",
       "expected_risk_types": ["虚增收入", "成本结转异常"],
       "expected_rag_ids": ["revenue-recognition", "cost-inventory"],
       "expected_report_keywords": ["星河智能制造有限公司", "虚增收入", "成本结转异常"]

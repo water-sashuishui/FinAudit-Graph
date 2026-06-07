@@ -5,7 +5,7 @@ from pathlib import Path
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from pydantic import BaseModel, Field
 
-from .service import (
+from ..core.service import (
     build_config_status,
     execute_audit,
     query_audit_standards,

@@ -16,3 +16,9 @@ class AuditSystemState(TypedDict, total=False):
     negotiation_trace: list[dict[str, Any]]
     llm_provider: str
     error_message: str
+    neo4j_configured: bool
+    neo4j_available: bool
+    graph_write_status: str
+    graph_write_error: str
+    graph_records_written: int
+    graph_source: str

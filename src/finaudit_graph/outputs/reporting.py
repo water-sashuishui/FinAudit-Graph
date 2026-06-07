@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from .state import AuditSystemState
+from ..core.state import AuditSystemState
 
 # 本模块负责把工作流状态整理成“可交付物”：
 # 既能生成 Markdown 版本给前端/CLI 展示，也能继续落盘为 DOCX 报告。
@@ -96,7 +96,7 @@ def build_full_report_markdown(state: AuditSystemState) -> str:
 """
 
 
-def save_markdown_report(state: AuditSystemState, output_dir: str | Path = "outputs") -> Path:
+def save_markdown_report(state: AuditSystemState, output_dir: str | Path = "data/outputs") -> Path:
     """Save the final audit summary as a Markdown report."""
     target_dir = Path(output_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
@@ -110,7 +110,7 @@ def save_markdown_report(state: AuditSystemState, output_dir: str | Path = "outp
     return path
 
 
-def save_docx_report(state: AuditSystemState, output_dir: str | Path = "outputs") -> Path | None:
+def save_docx_report(state: AuditSystemState, output_dir: str | Path = "data/outputs") -> Path | None:
     """Save a formal Word report if python-docx is available."""
     try:
         from docx import Document
@@ -168,7 +168,7 @@ def save_docx_report(state: AuditSystemState, output_dir: str | Path = "outputs"
     return path
 
 
-def save_reports(state: AuditSystemState, output_dir: str | Path = "outputs") -> dict[str, str | None]:
+def save_reports(state: AuditSystemState, output_dir: str | Path = "data/outputs") -> dict[str, str | None]:
     """同时保存 Markdown 和可选 DOCX 报告，并返回落盘路径。"""
     markdown_path = save_markdown_report(state, output_dir)
     docx_path = save_docx_report(state, output_dir)

@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import os
 import unittest
 from pathlib import Path
 
+os.environ["N8N_WEBHOOK_URL"] = ""
+os.environ["AUDIT_REVIEW_EMAIL"] = ""
+
 from fastapi.testclient import TestClient
 
-from finaudit_graph.api import app
+from finaudit_graph.interfaces.api import app
 
 
 class FinAuditApiTest(unittest.TestCase):
@@ -45,7 +49,7 @@ class FinAuditApiTest(unittest.TestCase):
         """验证使用本地路径时会走完整审计流程并返回核心字段。"""
         response = self.client.post(
             "/api/audit/run",
-            data={"document_path": "showcase/demo_inputs/test_audit.txt", "save_report": "false"},
+            data={"document_path": "data/demo_inputs/test_audit.txt", "save_report": "false"},
         )
 
         self.assertEqual(200, response.status_code)
@@ -59,7 +63,7 @@ class FinAuditApiTest(unittest.TestCase):
 
     def test_audit_run_with_upload(self) -> None:
         """验证上传文件会被保存后交给同一套审计服务处理。"""
-        file_bytes = Path("showcase/demo_inputs/test_audit.txt").read_bytes()
+        file_bytes = Path("data/demo_inputs/test_audit.txt").read_bytes()
         response = self.client.post(
             "/api/audit/run",
             files={"file": ("test_audit.txt", file_bytes, "text/plain")},
@@ -79,7 +83,7 @@ class FinAuditApiTest(unittest.TestCase):
 
     def test_audit_run_rejects_invalid_path(self) -> None:
         """本地路径不存在时应返回 404。"""
-        response = self.client.post("/api/audit/run", data={"document_path": "showcase/demo_inputs/missing.txt"})
+        response = self.client.post("/api/audit/run", data={"document_path": "data/demo_inputs/missing.txt"})
 
         self.assertEqual(404, response.status_code)
 

@@ -60,7 +60,7 @@ def build_audit_workflow():
     return workflow.compile()
 
 
-def run_demo(raw_document_path: str = "showcase/demo_inputs/test_audit.txt") -> AuditSystemState:
+def run_demo(raw_document_path: str = "data/demo_inputs/test_audit.txt") -> AuditSystemState:
     """使用指定材料路径运行演示工作流。"""
     # demo 入口只负责准备初始状态，真正的执行顺序交给工作流本身。
     graph = build_audit_workflow()

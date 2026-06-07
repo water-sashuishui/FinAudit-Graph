@@ -3,17 +3,18 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from .audit_agent import run_langchain_audit_agent
-from .knowledge import retrieve_audit_standards, retrieve_related_parties
-from .llm import DeepSeekClient
-from .negotiation import run_multi_agent_negotiation
-from .parsing import parse_financial_document
+from ..ingestion.parsing import parse_financial_document
+from ..intelligence.audit_agent import run_langchain_audit_agent
+from ..intelligence.llm import DeepSeekClient
+from ..intelligence.negotiation import run_multi_agent_negotiation
+from ..retrieval.graph_store import ingest_parsed_graph
+from ..retrieval.knowledge import retrieve_audit_standards, retrieve_related_parties
 from .state import AuditSystemState
 
 
 def node_data_parser(state: AuditSystemState) -> AuditSystemState:
     """Parse source audit material into structured financial facts."""
-    raw_path = state.get("raw_document_path", "showcase/demo_inputs/test_audit.txt")
+    raw_path = state.get("raw_document_path", "data/demo_inputs/test_audit.txt")
     parsed = parse_financial_document(raw_path)
     return {**state, "parsed_financial_data": parsed, "error_message": ""}
 
@@ -29,11 +30,13 @@ def node_graph_searcher(state: AuditSystemState) -> AuditSystemState:
     RETURN p.name AS related_party, length(r) AS depth, r AS relation_path
     LIMIT 20
     """
+    graph_status = ingest_parsed_graph({**parsed, "company_name": company_name})
     related_parties = retrieve_related_parties(company_name)
     for item in related_parties:
         item["cypher_template"] = cypher_query.strip()
     return {
         **state,
+        **graph_status,
         "parsed_financial_data": {**parsed, "company_name": company_name},
         "discovered_related_parties": related_parties,
     }

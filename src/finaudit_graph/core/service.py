@@ -4,12 +4,13 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
-from .automation import build_n8n_payload, send_to_n8n
-from .knowledge import AUDIT_STANDARD_PATH, retrieve_audit_standards
-from .reporting import build_full_report_markdown, save_reports
-from .security import inspect_document_security
-from .settings import ProjectSettings
-from .vector_store import DEFAULT_VECTOR_STORE_PATH, LocalVectorStore
+from ..ingestion.security import inspect_document_security
+from ..outputs.automation import build_n8n_payload, send_to_n8n
+from ..outputs.reporting import build_full_report_markdown, save_reports
+from ..retrieval.graph_store import check_neo4j_available
+from ..retrieval.knowledge import AUDIT_STANDARD_PATH, retrieve_audit_standards
+from ..retrieval.vector_store import DEFAULT_VECTOR_STORE_PATH, LocalVectorStore
+from ..settings import ProjectSettings
 from .workflow import run_demo
 
 SUPPORTED_DOCUMENT_SUFFIXES = {".txt", ".pdf", ".docx", ".xlsx", ".xls", ".csv"}
@@ -19,7 +20,7 @@ def execute_audit(
     document_path: str | Path,
     *,
     save_report: bool = False,
-    output_dir: str | Path = "outputs",
+    output_dir: str | Path = "data/outputs",
     request_id: str | None = None,
 ) -> dict[str, Any]:
     """执行端到端审计，并把工作流状态整理成 API/前端统一消费的结果结构。
@@ -123,10 +124,13 @@ def rebuild_rag_index() -> dict[str, Any]:
 def build_config_status(settings: ProjectSettings | None = None) -> dict[str, Any]:
     """汇总外部依赖配置状态，用于健康检查和演示页展示。"""
     current = settings or ProjectSettings.from_env()
+    neo4j_configured = bool(current.neo4j_uri and current.neo4j_password != "password")
     return {
         "deepseek_configured": bool(current.deepseek_api_key and current.audit_llm_model),
-        "neo4j_configured": bool(current.neo4j_uri and current.neo4j_password != "password"),
+        "neo4j_configured": neo4j_configured,
+        "neo4j_available": check_neo4j_available(current) if neo4j_configured else False,
         "n8n_configured": bool(current.n8n_webhook_url),
+        "audit_review_email_configured": bool(current.audit_review_email),
         "feishu_configured": bool(
             current.feishu_app_id
             and current.feishu_app_secret

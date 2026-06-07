@@ -4,7 +4,8 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .settings import ProjectSettings
+from ..settings import ProjectSettings
+from .graph_store import query_graph_related_parties
 from .vector_store import DEFAULT_VECTOR_STORE_PATH, LocalVectorStore
 
 # 本模块负责两类“知识检索”：
@@ -37,6 +38,8 @@ def query_neo4j_related_parties(
     settings: ProjectSettings | None = None,
 ) -> list[dict[str, Any]]:
     """Query Neo4j when configured; return an empty list when unavailable."""
+    return query_graph_related_parties(company_name, settings=settings)
+
     settings = settings or ProjectSettings.from_env()
     if not settings.neo4j_uri or settings.neo4j_password == "password":
         return []
@@ -82,7 +85,7 @@ def query_neo4j_related_parties(
 
 def retrieve_related_parties(company_name: str) -> list[dict[str, Any]]:
     """Use Neo4j when available, otherwise use local JSON fallback."""
-    neo4j_records = query_neo4j_related_parties(company_name)
+    neo4j_records = query_graph_related_parties(company_name)
     if neo4j_records:
         return neo4j_records
     records = load_related_parties(company_name)

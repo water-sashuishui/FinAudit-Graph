@@ -11,8 +11,7 @@ readme = "README.md"
 dependencies = []
 
 [project.scripts]
-finaudit-graph = "finaudit_graph.cli:main"
+finaudit-graph = "finaudit_graph.interfaces.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
-

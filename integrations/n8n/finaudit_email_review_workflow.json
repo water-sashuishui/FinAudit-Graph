@@ -1,0 +1,173 @@
+{
+  "name": "FinAudit-Graph 审计复核邮件通知",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "finaudit-review",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "finaudit-webhook",
+      "name": "接收审计结果",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -760,
+        0
+      ],
+      "webhookId": "finaudit-review"
+    },
+    {
+      "parameters": {
+        "jsCode": "const payload = $json.body ?? $json;\nconst risks = Array.isArray(payload.risks) ? payload.risks : [];\nconst highRiskCount = Number(payload.high_risk_count ?? risks.filter((risk) => risk.severity === '高').length);\nconst riskCount = Number(payload.risk_count ?? risks.length);\nconst reviewEmail = String(payload.review_email ?? '').trim();\nconst riskSummary = risks.map((risk, index) => `${index + 1}. ${risk.risk_type ?? '未知风险'}（${risk.severity ?? '未知'}）：${risk.evidence ?? ''}`).join('\\n');\nreturn [{\n  json: {\n    company_name: payload.company_name ?? '未知企业',\n    reporting_year: payload.reporting_year ?? '',\n    risk_count: riskCount,\n    high_risk_count: highRiskCount,\n    should_notify: Boolean(reviewEmail) && highRiskCount > 0,\n    review_email: reviewEmail,\n    email_subject: payload.email_subject ?? `FinAudit-Graph 审计复核提醒：${payload.company_name ?? '未知企业'}`,\n    email_body: payload.email_body ?? [\n      'FinAudit-Graph 已完成一份审计分析，请关注以下复核线索。',\n      '',\n      `被审计单位：${payload.company_name ?? '未知企业'}`,\n      `报告年度：${payload.reporting_year ?? ''}`,\n      `风险总数：${riskCount}`,\n      `高风险数量：${highRiskCount}`,\n      '',\n      '风险摘要：',\n      riskSummary || '- 暂未识别到审计风险。',\n      '',\n      '请登录系统查看完整审计报告和底稿证据。'\n    ].join('\\n'),\n    received_at: new Date().toISOString()\n  }\n}];"
+      },
+      "id": "prepare-email-payload",
+      "name": "整理邮件内容",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -520,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.should_notify }}",
+              "value2": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "if-high-risk",
+      "name": "是否需要邮件通知",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        -280,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "fromEmail": "15173160163@163.com",
+        "toEmail": "={{ $json.review_email }}",
+        "subject": "={{ $json.email_subject }}",
+        "emailFormat": "text",
+        "text": "={{ $json.email_body }}",
+        "options": {}
+      },
+      "id": "send-review-email",
+      "name": "发送复核邮件",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2,
+      "position": [
+        -20,
+        -120
+      ],
+      "credentials": {
+        "smtp": {
+          "id": "dMW8ZsraJe3kjAKg",
+          "name": "163邮箱SMTP"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { sent: true, mode: 'email_notification', review_task_id: 'FA-' + $node['整理邮件内容'].json.reporting_year + '-' + $execution.id, review_status: 'pending_review', review_priority: $node['整理邮件内容'].json.high_risk_count >= 2 ? 'urgent' : 'high', company_name: $node['整理邮件内容'].json.company_name, review_email: $node['整理邮件内容'].json.review_email, high_risk_count: $node['整理邮件内容'].json.high_risk_count, message: 'High-risk audit result was sent to reviewer email and a review task was created.' } }}",
+        "options": {}
+      },
+      "id": "respond-email-sent",
+      "name": "返回已通知",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        240,
+        -120
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { sent: false, mode: 'no_email_needed', review_task_id: 'FA-' + $json.reporting_year + '-' + $execution.id, review_status: $json.review_email ? 'archived' : 'email_not_configured', review_priority: 'normal', company_name: $json.company_name, high_risk_count: $json.high_risk_count, review_email_configured: Boolean($json.review_email), message: $json.review_email ? 'No high-risk audit result, email skipped and result archived.' : 'AUDIT_REVIEW_EMAIL is empty, email skipped.' } }}",
+        "options": {}
+      },
+      "id": "respond-email-skipped",
+      "name": "返回无需通知",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        -20,
+        140
+      ]
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "接收审计结果": {
+      "main": [
+        [
+          {
+            "node": "整理邮件内容",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "整理邮件内容": {
+      "main": [
+        [
+          {
+            "node": "是否需要邮件通知",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "是否需要邮件通知": {
+      "main": [
+        [
+          {
+            "node": "发送复核邮件",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "返回无需通知",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "发送复核邮件": {
+      "main": [
+        [
+          {
+            "node": "返回已通知",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "finaudit-email-review-v1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "tags": []
+}

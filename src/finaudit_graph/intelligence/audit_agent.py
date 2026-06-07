@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-from .settings import ProjectSettings
+from ..settings import ProjectSettings
 
 
 REQUIRED_RISK_FIELDS = {"risk_type", "severity", "evidence", "audit_basis", "recommendation"}
@@ -47,7 +47,7 @@ def create_deepseek_audit_agent(settings: ProjectSettings | None = None):
     @tool
     def rag_retriever_tool(query: str) -> str:
         """Retrieve audit standards from the local vector database."""
-        from .knowledge import retrieve_audit_standards
+        from ..retrieval.knowledge import retrieve_audit_standards
 
         # Agent 不直接接触底层向量库实现，只通过这个工具取回可解释的准则片段。
         standards = retrieve_audit_standards([query], limit=4)

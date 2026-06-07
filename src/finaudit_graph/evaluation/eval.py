@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from .service import execute_audit
+from ..core.service import execute_audit
 
 
 def run_eval(dataset_path: str | Path) -> dict[str, Any]:

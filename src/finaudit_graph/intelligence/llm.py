@@ -4,7 +4,7 @@ import json
 import urllib.request
 from typing import Any
 
-from .settings import ProjectSettings
+from ..settings import ProjectSettings
 
 # 本模块只封装最小可用的 DeepSeek 调用逻辑。
 # 它不依赖更重的 SDK，目的是让 CLI、工作流和 fallback 调用都保持轻量。

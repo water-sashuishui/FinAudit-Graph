@@ -14,6 +14,24 @@ def build_api_url(path: str) -> str:
     return f"{API_BASE_URL.rstrip('/')}{path}"
 
 
+def build_automation_status(n8n_result: dict[str, object]) -> dict[str, object]:
+    """提取 N8N 自动化结果中适合前端展示的非敏感字段。"""
+    response_json = n8n_result.get("response_json")
+    if not isinstance(response_json, dict):
+        response_json = {}
+    return {
+        "是否已通知": bool(n8n_result.get("sent")),
+        "通知模式": n8n_result.get("mode") or response_json.get("mode", "unknown"),
+        "通知说明": n8n_result.get("message") or response_json.get("message", ""),
+        "HTTP 状态": n8n_result.get("status"),
+        "高风险数量": response_json.get("high_risk_count"),
+        "收件邮箱已配置": response_json.get("review_email_configured", bool(response_json.get("review_email"))),
+        "复核任务编号": response_json.get("review_task_id"),
+        "复核任务状态": response_json.get("review_status"),
+        "复核优先级": response_json.get("review_priority"),
+    }
+
+
 st.set_page_config(
     page_title="FinAudit-Graph 财务助手",
     page_icon="FA",
@@ -81,6 +99,26 @@ if st.button("开始审计分析", type="primary", use_container_width=True, dis
 
                 st.subheader("风险识别结果")
                 st.json(payload.get("audit_risks", []))
+
+                n8n_result = payload.get("n8n_result", {})
+                if isinstance(n8n_result, dict):
+                    st.subheader("自动化通知状态")
+                    automation_status = build_automation_status(n8n_result)
+                    status_col, mode_col, risk_col = st.columns(3)
+                    status_col.metric("通知结果", "已发送" if automation_status["是否已通知"] else "未发送")
+                    mode_col.metric("通知模式", str(automation_status["通知模式"]))
+                    risk_value = automation_status["高风险数量"]
+                    risk_col.metric("高风险数量", str(risk_value) if risk_value is not None else "未返回")
+                    task_id = automation_status["复核任务编号"]
+                    if task_id:
+                        st.info(
+                            f"复核任务：{task_id}｜状态：{automation_status['复核任务状态']}｜"
+                            f"优先级：{automation_status['复核优先级']}"
+                        )
+                    if automation_status["通知说明"]:
+                        st.caption(str(automation_status["通知说明"]))
+                    with st.expander("查看自动化详情"):
+                        st.json(automation_status)
 
                 report_text = payload.get("final_report_markdown", "")
                 st.download_button(

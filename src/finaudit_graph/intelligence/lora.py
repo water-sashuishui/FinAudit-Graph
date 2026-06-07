@@ -6,7 +6,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from .settings import ProjectSettings
+from ..settings import ProjectSettings
 
 REQUIRED_LORA_FILES = {
     "adapter_model.safetensors",
@@ -25,7 +25,7 @@ def _module_available(name: str) -> bool:
     return importlib.util.find_spec(name) is not None
 
 
-def inspect_lora_artifact(artifact_dir: str | Path = "showcase/lora_adapter") -> dict[str, Any]:
+def inspect_lora_artifact(artifact_dir: str | Path = "data/lora_adapter") -> dict[str, Any]:
     """Summarize the exported LoRA adapter in a presentation-friendly shape."""
     artifact_path = Path(artifact_dir)
     if not artifact_path.exists():
@@ -56,7 +56,7 @@ def get_lora_runtime_status(
 ) -> dict[str, Any]:
     """检查 LoRA 风险助手的开关、产物文件、基础模型和依赖是否齐备。"""
     current = settings or ProjectSettings.from_env()
-    target_dir = Path(artifact_dir or getattr(current, "lora_artifact_dir", "showcase/lora_adapter"))
+    target_dir = Path(artifact_dir or getattr(current, "lora_artifact_dir", "data/lora_adapter"))
 
     artifact_exists = target_dir.exists()
     missing_required_files: list[str] = []
@@ -157,7 +157,7 @@ def run_lora_risk_assistant(
     try:
         tokenizer, model = _load_lora_generator(
             getattr(current, "lora_base_model_path", ""),
-            getattr(current, "lora_artifact_dir", "showcase/lora_adapter"),
+            getattr(current, "lora_artifact_dir", "data/lora_adapter"),
         )
         prompt = (
             "你是财务审计风险分类助手。请根据财务指标、关联方线索和审计准则，"

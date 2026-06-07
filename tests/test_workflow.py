@@ -11,17 +11,19 @@ from unittest.mock import patch
 
 os.environ["DEEPSEEK_API_KEY"] = ""
 os.environ["NEO4J_PASSWORD"] = "password"
+os.environ["N8N_WEBHOOK_URL"] = ""
+os.environ["AUDIT_REVIEW_EMAIL"] = ""
 
-from finaudit_graph.automation import build_n8n_payload, send_to_n8n
-from finaudit_graph.eval import run_eval
-from finaudit_graph.knowledge import retrieve_audit_standards
-from finaudit_graph.llm import DeepSeekClient, normalize_chat_completions_url
-from finaudit_graph.lora import get_lora_runtime_status, inspect_lora_artifact
-from finaudit_graph.negotiation import run_multi_agent_negotiation
-from finaudit_graph.reporting import build_full_report_markdown
-from finaudit_graph.security import detect_prompt_injection, sanitize_text
+from finaudit_graph.evaluation.eval import run_eval
+from finaudit_graph.ingestion.security import detect_prompt_injection, sanitize_text
+from finaudit_graph.intelligence.llm import DeepSeekClient, normalize_chat_completions_url
+from finaudit_graph.intelligence.lora import get_lora_runtime_status, inspect_lora_artifact
+from finaudit_graph.intelligence.negotiation import run_multi_agent_negotiation
+from finaudit_graph.outputs.automation import build_n8n_payload, send_to_n8n
+from finaudit_graph.outputs.reporting import build_full_report_markdown
+from finaudit_graph.retrieval.knowledge import retrieve_audit_standards
 from finaudit_graph.settings import ProjectSettings
-from finaudit_graph.workflow import run_demo
+from finaudit_graph.core.workflow import run_demo
 
 
 class FinAuditWorkflowTest(unittest.TestCase):
@@ -48,9 +50,38 @@ class FinAuditWorkflowTest(unittest.TestCase):
         self.assertIn("confidence", state["audit_risks_found"][0])
         self.assertIn("negotiation_trace", state)
 
+    def test_n8n_response_json_is_normalized_for_frontend(self) -> None:
+        """真实 N8N 返回 JSON 字符串时，应被整理成前端可直接展示的结构。"""
+        from finaudit_graph.outputs.automation import normalize_n8n_response
+
+        normalized = normalize_n8n_response(
+            200,
+            (
+                '{"sent":true,"mode":"email_notification","message":"High-risk audit result was sent.",'
+                '"review_task_id":"FA-2024-140","review_status":"pending_review","review_priority":"high"}'
+            ),
+        )
+
+        self.assertTrue(normalized["sent"])
+        self.assertEqual("email_notification", normalized["mode"])
+        self.assertEqual("High-risk audit result was sent.", normalized["message"])
+        self.assertEqual("email_notification", normalized["response_json"]["mode"])
+        self.assertEqual("FA-2024-140", normalized["response_json"]["review_task_id"])
+
+    def test_n8n_plain_text_response_still_has_display_message(self) -> None:
+        """非 JSON 响应也应保留可读 message，避免前端显示空白。"""
+        from finaudit_graph.outputs.automation import normalize_n8n_response
+
+        normalized = normalize_n8n_response(200, "ok")
+
+        self.assertTrue(normalized["sent"])
+        self.assertEqual("webhook_response", normalized["mode"])
+        self.assertEqual("ok", normalized["message"])
+        self.assertEqual("ok", normalized["response"])
+
     def test_lora_artifact_summary_reads_adapter_outputs(self) -> None:
         """LoRA 产物摘要应读取 adapter 元数据和文件清单。"""
-        summary = inspect_lora_artifact(Path("showcase/lora_adapter"))
+        summary = inspect_lora_artifact(Path("data/lora_adapter"))
 
         self.assertEqual(summary["artifact_type"], "LoRA adapter")
         self.assertEqual(summary["base_model"], "Qwen2.5-1.5B-Instruct")
@@ -92,7 +123,7 @@ class FinAuditWorkflowTest(unittest.TestCase):
 
     def test_fastapi_service_entry_exists(self) -> None:
         """API 文件应作为服务入口存在，且不混入 Streamlit 前端逻辑。"""
-        api_source = Path("src/finaudit_graph/api.py").read_text(encoding="utf-8")
+        api_source = Path("src/finaudit_graph/interfaces/api.py").read_text(encoding="utf-8")
 
         self.assertIn("FastAPI", api_source)
         self.assertIn("/api/audit/run", api_source)
@@ -100,11 +131,14 @@ class FinAuditWorkflowTest(unittest.TestCase):
 
     def test_streamlit_frontend_calls_fastapi_instead_of_workflow(self) -> None:
         """Streamlit 前端应调用 FastAPI，而不是直接运行本地工作流。"""
-        app_source = Path("apps/streamlit_app.py").read_text(encoding="utf-8")
+        app_source = Path("src/finaudit_graph/interfaces/streamlit_app.py").read_text(encoding="utf-8")
 
         self.assertIn("/api/audit/run", app_source)
         self.assertIn("requests.post", app_source)
         self.assertNotIn("run_demo(", app_source)
+        self.assertIn("自动化通知状态", app_source)
+        self.assertIn("build_automation_status", app_source)
+        self.assertIn("复核任务编号", app_source)
 
     def test_project_paths_use_ascii_names_outside_environment_dirs(self) -> None:
         """项目文件名应保持 ASCII，避免跨平台路径编码问题。"""
@@ -120,7 +154,7 @@ class FinAuditWorkflowTest(unittest.TestCase):
 
     def test_report_output_filenames_are_ascii(self) -> None:
         """报告落盘路径应使用 ASCII 文件名，便于下载和归档。"""
-        from finaudit_graph.reporting import save_reports
+        from finaudit_graph.outputs.reporting import save_reports
 
         state = run_demo()
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -134,7 +168,7 @@ class FinAuditWorkflowTest(unittest.TestCase):
 
     def test_save_reports_keeps_markdown_when_docx_file_is_locked(self) -> None:
         """DOCX 保存失败时仍应保留 Markdown 报告。"""
-        from finaudit_graph.reporting import save_reports
+        from finaudit_graph.outputs.reporting import save_reports
 
         state = run_demo()
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -207,7 +241,7 @@ class FinAuditWorkflowTest(unittest.TestCase):
     def test_langchain_deepseek_agent_parses_structured_risks(self) -> None:
         """LangChain Agent 返回 JSON 时应解析并保留合法风险项。"""
         from langchain_core.messages import AIMessage
-        from finaudit_graph.audit_agent import run_langchain_audit_agent
+        from finaudit_graph.intelligence.audit_agent import run_langchain_audit_agent
 
         class FakeAgent:
             """模拟 LangChain Agent 的 invoke 返回结构。"""
@@ -241,7 +275,7 @@ class FinAuditWorkflowTest(unittest.TestCase):
 
     def test_compliance_checker_prefers_langchain_agent_when_available(self) -> None:
         """合规检查节点应优先使用可用的 LangChain Agent 结果。"""
-        from finaudit_graph.nodes import node_compliance_checker
+        from finaudit_graph.core.nodes import node_compliance_checker
 
         state = {
             "parsed_financial_data": {
@@ -254,7 +288,7 @@ class FinAuditWorkflowTest(unittest.TestCase):
             "discovered_related_parties": [],
         }
         with patch(
-            "finaudit_graph.nodes.run_langchain_audit_agent",
+            "finaudit_graph.core.nodes.run_langchain_audit_agent",
             return_value=[
                 {
                     "risk_type": "Agent审计风险",
@@ -294,7 +328,7 @@ class FinAuditWorkflowTest(unittest.TestCase):
 
     def test_xlsx_document_parser_semantically_aligns_financial_fields(self) -> None:
         """XLSX 解析重点验证标签和值不在同一格时的语义对齐能力。"""
-        from finaudit_graph.parsing import parse_financial_document
+        from finaudit_graph.ingestion.parsing import parse_financial_document
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             document_path = Path(tmp_dir) / "financial_data.xlsx"
@@ -324,7 +358,7 @@ class FinAuditWorkflowTest(unittest.TestCase):
 
     def test_realistic_xlsx_parser_handles_multi_sheet_financial_statements(self) -> None:
         """更接近真实财务报表的多 sheet XLSX 应能计算关键增长率。"""
-        from finaudit_graph.parsing import parse_financial_document
+        from finaudit_graph.ingestion.parsing import parse_financial_document
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             document_path = Path(tmp_dir) / "realistic_financial_report.xlsx"
@@ -369,7 +403,7 @@ class FinAuditWorkflowTest(unittest.TestCase):
 
     def test_unreadable_xlsx_does_not_look_like_successful_demo_parse(self) -> None:
         """无法解析的真实文件不应被 demo 默认值伪装成完整提取成功。"""
-        from finaudit_graph.parsing import parse_financial_document
+        from finaudit_graph.ingestion.parsing import parse_financial_document
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             document_path = Path(tmp_dir) / "broken_financial_data.xlsx"
@@ -384,7 +418,7 @@ class FinAuditWorkflowTest(unittest.TestCase):
 
     def test_csv_document_parser_aligns_values_from_table_headers(self) -> None:
         """CSV 解析应能从表头和下一行值中抽取关键财务字段。"""
-        from finaudit_graph.parsing import parse_financial_document
+        from finaudit_graph.ingestion.parsing import parse_financial_document
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             document_path = Path(tmp_dir) / "financial_data.csv"
@@ -422,9 +456,174 @@ class FinAuditWorkflowTest(unittest.TestCase):
         risk_types = {risk["risk_type"] for risk in state["audit_risks_found"]}
         self.assertNotIn("关联方利益输送", risk_types)
 
+    def test_graph_extraction_builds_company_and_relationship_candidates(self) -> None:
+        """上传材料中的企业和关系线索应被转换为 Neo4j 写入候选。"""
+        from finaudit_graph.retrieval.graph_store import extract_graph_candidates
+
+        parsed = {
+            "company_name": "华景智能装备股份有限公司",
+            "source_file": "sample.txt",
+            "raw_text_excerpt": (
+                "华景智能装备股份有限公司主要供应商为海河新材料有限公司。"
+                "期末对远航商业保理有限公司存在应收款。"
+                "张某为疑似实际控制人，且与启明供应链管理有限公司存在关联方关系。"
+            ),
+        }
+
+        candidates = extract_graph_candidates(parsed)
+
+        self.assertIn(
+            {"name": "华景智能装备股份有限公司", "label": "Company"},
+            [{"name": node.name, "label": node.label} for node in candidates.nodes],
+        )
+        relationship_types = {relationship.type for relationship in candidates.relationships}
+        self.assertIn("PURCHASES_FROM", relationship_types)
+        self.assertIn("HAS_RECEIVABLE_FROM", relationship_types)
+        self.assertIn("CONTROLLED_BY", relationship_types)
+        self.assertIn("RELATED_TO", relationship_types)
+
+    def test_graph_ingestion_skips_when_neo4j_uses_default_password(self) -> None:
+        """Neo4j 未真正配置时，图谱写入应跳过且不阻断流程。"""
+        from finaudit_graph.retrieval.graph_store import ingest_parsed_graph
+
+        parsed = {"company_name": "华景智能装备股份有限公司", "source_file": "sample.txt"}
+        settings = ProjectSettings(
+            neo4j_uri="bolt://localhost:7687",
+            neo4j_username="neo4j",
+            neo4j_password="password",
+        )
+
+        status = ingest_parsed_graph(parsed, settings=settings)
+
+        self.assertEqual("skipped", status["graph_write_status"])
+        self.assertFalse(status["neo4j_available"])
+        self.assertEqual(0, status["graph_records_written"])
+
+    def test_graph_ingestion_writes_candidates_with_driver_factory(self) -> None:
+        """配置 Neo4j 时应通过 driver 写入节点和关系。"""
+        from finaudit_graph.retrieval.graph_store import ingest_parsed_graph
+
+        class FakeResult:
+            def consume(self):
+                return None
+
+        class FakeSession:
+            def __init__(self):
+                self.calls = []
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def run(self, query, **params):
+                self.calls.append((query, params))
+                return FakeResult()
+
+        class FakeDriver:
+            def __init__(self):
+                self.session_obj = FakeSession()
+                self.closed = False
+
+            def session(self):
+                return self.session_obj
+
+            def verify_connectivity(self):
+                return None
+
+            def close(self):
+                self.closed = True
+
+        fake_driver = FakeDriver()
+        parsed = {
+            "company_name": "华景智能装备股份有限公司",
+            "source_file": "sample.txt",
+            "raw_text_excerpt": "华景智能装备股份有限公司主要供应商为海河新材料有限公司。",
+        }
+        settings = ProjectSettings(
+            neo4j_uri="bolt://localhost:7687",
+            neo4j_username="neo4j",
+            neo4j_password="secret",
+        )
+
+        status = ingest_parsed_graph(parsed, settings=settings, driver_factory=lambda _: fake_driver)
+
+        self.assertEqual("succeeded", status["graph_write_status"])
+        self.assertTrue(status["neo4j_available"])
+        self.assertGreaterEqual(status["graph_records_written"], 2)
+        self.assertTrue(fake_driver.closed)
+        self.assertTrue(any("MERGE (source:Company" in query for query, _ in fake_driver.session_obj.calls))
+
+    def test_related_party_retrieval_uses_neo4j_before_json_fallback(self) -> None:
+        """Neo4j 有结果时，关联方检索应优先返回 Neo4j 来源。"""
+        from finaudit_graph.retrieval.knowledge import retrieve_related_parties
+
+        with patch(
+            "finaudit_graph.retrieval.knowledge.query_graph_related_parties",
+            return_value=[
+                {
+                    "name": "海河新材料有限公司",
+                    "relation": "Neo4j 关系穿透",
+                    "depth": 1,
+                    "evidence": "PURCHASES_FROM",
+                    "source": "neo4j",
+                }
+            ],
+        ):
+            records = retrieve_related_parties("华景智能装备股份有限公司")
+
+        self.assertEqual("neo4j", records[0]["source"])
+        self.assertEqual("海河新材料有限公司", records[0]["name"])
+
+    def test_graph_searcher_adds_graph_ingestion_status(self) -> None:
+        """图谱检索节点应先写入上传文件线索，并把写入状态放回工作流。"""
+        from finaudit_graph.core.nodes import node_graph_searcher
+
+        state = {
+            "raw_document_path": "data/demo_inputs/test_audit.txt",
+            "parsed_financial_data": {
+                "company_name": "华景智能装备股份有限公司",
+                "source_file": "test_audit.txt",
+                "raw_text_excerpt": "华景智能装备股份有限公司主要供应商为海河新材料有限公司。",
+            },
+        }
+
+        with patch(
+            "finaudit_graph.core.nodes.ingest_parsed_graph",
+            return_value={
+                "neo4j_configured": True,
+                "neo4j_available": True,
+                "graph_write_status": "succeeded",
+                "graph_write_error": "",
+                "graph_records_written": 2,
+                "graph_source": "neo4j",
+            },
+        ):
+            result = node_graph_searcher(state)
+
+        self.assertEqual("succeeded", result["graph_write_status"])
+        self.assertEqual(2, result["graph_records_written"])
+
+    def test_config_status_reports_neo4j_availability_flag(self) -> None:
+        """配置状态应区分 Neo4j 已配置和当前可连接。"""
+        from finaudit_graph.core.service import build_config_status
+
+        settings = ProjectSettings(
+            neo4j_uri="bolt://localhost:7687",
+            neo4j_username="neo4j",
+            neo4j_password="secret",
+        )
+
+        with patch("finaudit_graph.core.service.check_neo4j_available", return_value=True):
+            status = build_config_status(settings)
+
+        self.assertTrue(status["neo4j_configured"])
+        self.assertTrue(status["neo4j_available"])
+
     def test_vector_store_builds_persistent_audit_standard_index(self) -> None:
         """向量库构建后应落地 manifest，并为每条准则生成本地 hashing 向量。"""
-        from finaudit_graph.vector_store import LocalVectorStore
+        from finaudit_graph.retrieval.vector_store import LocalVectorStore
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             store_path = Path(tmp_dir) / "chroma_db"
@@ -512,7 +711,7 @@ class FinAuditWorkflowTest(unittest.TestCase):
 
     def test_local_eval_dataset_returns_metrics(self) -> None:
         """本地评估集应返回案例数和核心指标字段。"""
-        report = run_eval("showcase/eval_dataset.json")
+        report = run_eval("data/eval_dataset.json")
 
         self.assertEqual(2, report["case_count"])
         self.assertIn("retrieval_hit_rate", report)

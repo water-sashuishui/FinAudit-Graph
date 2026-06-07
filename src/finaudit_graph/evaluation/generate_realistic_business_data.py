@@ -7,7 +7,7 @@ from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 
-OUTPUT_PATH = Path("showcase/demo_inputs/realistic_business_financials.xlsx")
+OUTPUT_PATH = Path("data/demo_inputs/realistic_business_financials.xlsx")
 
 
 def main() -> None:
