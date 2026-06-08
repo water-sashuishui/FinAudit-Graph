@@ -27,7 +27,7 @@ def _safe_filename(value: str) -> str:
 
 
 def build_full_report_markdown(state: AuditSystemState) -> str:
-    """Build a formal MVP audit report from the workflow state."""
+    """根据工作流状态生成正式 Markdown 审计报告。"""
     parsed = state.get("parsed_financial_data", {})
     related_parties = state.get("discovered_related_parties", [])
     risks = state.get("audit_risks_found", [])
@@ -36,6 +36,7 @@ def build_full_report_markdown(state: AuditSystemState) -> str:
 
     risk_blocks = []
     for index, risk in enumerate(risks, start=1):
+        # 报告只消费已经协商后的风险项，不在输出层重新判断风险等级。
         risk_blocks.append(
             "\n".join(
                 [
@@ -97,7 +98,7 @@ def build_full_report_markdown(state: AuditSystemState) -> str:
 
 
 def save_markdown_report(state: AuditSystemState, output_dir: str | Path = "data/outputs") -> Path:
-    """Save the final audit summary as a Markdown report."""
+    """保存 Markdown 报告，并返回落盘路径。"""
     target_dir = Path(output_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
     parsed = state.get("parsed_financial_data", {})
@@ -111,7 +112,7 @@ def save_markdown_report(state: AuditSystemState, output_dir: str | Path = "data
 
 
 def save_docx_report(state: AuditSystemState, output_dir: str | Path = "data/outputs") -> Path | None:
-    """Save a formal Word report if python-docx is available."""
+    """在 python-docx 可用时保存 Word 报告；不可用或保存失败时返回 None。"""
     try:
         from docx import Document
         from docx.oxml.ns import qn
@@ -164,6 +165,7 @@ def save_docx_report(state: AuditSystemState, output_dir: str | Path = "data/out
     try:
         doc.save(path)
     except OSError:
+        # Windows 上报告文件被 Word 打开时可能锁定；保留 Markdown 成功输出即可。
         return None
     return path
 

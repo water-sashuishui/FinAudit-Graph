@@ -11,7 +11,7 @@ from ..settings import ProjectSettings
 # 当前默认对接 N8N，也支持在未配置 webhook 时返回 dry-run 结果用于演示。
 
 def build_n8n_payload(state: AuditSystemState) -> dict[str, Any]:
-    """Build the structured payload expected by the N8N audit workflow."""
+    """构造 N8N 审计复核工作流需要的结构化 payload。"""
     settings = ProjectSettings.from_env()
     parsed = state.get("parsed_financial_data", {})
     risks = state.get("audit_risks_found", [])
@@ -19,6 +19,7 @@ def build_n8n_payload(state: AuditSystemState) -> dict[str, Any]:
     company_name = parsed.get("company_name", "未知企业")
     reporting_year = parsed.get("reporting_year")
     high_risk_count = sum(1 for risk in risks if risk.get("severity") == "高")
+    # email_body 是给 N8N 邮件节点的可读摘要；完整结构化风险仍放在 risks 字段里。
     risk_lines = [
         f"- {risk.get('risk_type', '未知风险')}（{risk.get('severity', '未知')}）：{risk.get('evidence', '')}"
         for risk in risks
@@ -52,7 +53,7 @@ def build_n8n_payload(state: AuditSystemState) -> dict[str, Any]:
 
 
 def send_to_n8n(payload: dict[str, Any], settings: ProjectSettings | None = None) -> dict[str, Any]:
-    """Send audit result to N8N, or return a dry-run response if no webhook is configured."""
+    """发送审计结果到 N8N；未配置 webhook 时返回 dry-run 响应。"""
     settings = settings or ProjectSettings.from_env()
     if not settings.n8n_webhook_url:
         # 未配置真实 webhook 时不报错，直接把 payload 原样回显给前端和 CLI。
@@ -76,7 +77,7 @@ def send_to_n8n(payload: dict[str, Any], settings: ProjectSettings | None = None
 
 
 def normalize_n8n_response(status: int, body: str) -> dict[str, Any]:
-    """Normalize N8N webhook response into stable API/frontend fields."""
+    """把 N8N webhook 响应整理成 API/前端稳定字段。"""
     result: dict[str, Any] = {
         "sent": 200 <= status < 300,
         "status": status,
@@ -90,6 +91,8 @@ def normalize_n8n_response(status: int, body: str) -> dict[str, Any]:
         return result
 
     if isinstance(parsed, dict):
+        # N8N 可以返回自定义 JSON；这里优先采用它提供的 sent/mode/message，
+        # 同时保留原始 response_json 方便前端展示复核任务编号等扩展字段。
         result["response_json"] = parsed
         if "sent" in parsed:
             result["sent"] = bool(parsed["sent"])

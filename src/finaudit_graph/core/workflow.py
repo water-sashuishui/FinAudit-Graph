@@ -12,7 +12,11 @@ from .state import AuditSystemState
 
 
 class SequentialAuditWorkflow:
-    """Fallback workflow used when LangGraph is not installed yet."""
+    """LangGraph 不可用时的最小工作流适配器。
+
+    对外保留与 LangGraph compiled graph 一致的 ``invoke`` 方法，方便服务层
+    和测试代码不关心当前运行环境是否安装了 LangGraph。
+    """
 
     def __init__(self, nodes: list[Callable[[AuditSystemState], AuditSystemState]]) -> None:
         """保存按顺序执行的节点列表。"""
@@ -27,10 +31,10 @@ class SequentialAuditWorkflow:
 
 
 def build_audit_workflow():
-    """Compile the FinAudit-Graph workflow.
+    """构建 FinAudit-Graph 的四阶段审计工作流。
 
-    The preferred path uses LangGraph. The fallback keeps the demo runnable in
-    minimal environments and mirrors the same node order.
+    优先使用 LangGraph 表达节点和边；如果演示环境未安装 LangGraph，则回退到
+    同顺序的串行执行器，确保核心链路仍可运行。
     """
     try:
         from langgraph.graph import END, StateGraph
@@ -52,6 +56,7 @@ def build_audit_workflow():
     workflow.add_node("node_compliance_checker", node_compliance_checker)
     workflow.add_node("node_report_generator", node_report_generator)
 
+    # 节点之间只通过 AuditSystemState 传递数据，避免在节点内部隐藏跨阶段依赖。
     workflow.set_entry_point("node_data_parser")
     workflow.add_edge("node_data_parser", "node_graph_searcher")
     workflow.add_edge("node_graph_searcher", "node_compliance_checker")
@@ -61,7 +66,7 @@ def build_audit_workflow():
 
 
 def run_demo(raw_document_path: str = "data/demo_inputs/test_audit.txt") -> AuditSystemState:
-    """使用指定材料路径运行演示工作流。"""
-    # demo 入口只负责准备初始状态，真正的执行顺序交给工作流本身。
+    """使用指定材料路径运行演示工作流，并返回完整状态。"""
+    # demo 入口只准备初始状态；具体执行顺序由 build_audit_workflow 统一维护。
     graph = build_audit_workflow()
     return graph.invoke({"raw_document_path": raw_document_path})

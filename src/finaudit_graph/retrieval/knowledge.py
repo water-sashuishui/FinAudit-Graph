@@ -17,7 +17,7 @@ AUDIT_STANDARD_PATH = Path("data/rag/audit_standards.json")
 
 
 def load_related_parties(company_name: str) -> list[dict[str, Any]]:
-    """Load local graph fallback records for one audited company."""
+    """从本地 JSON 加载指定企业的关联方 fallback 记录。"""
     if not GRAPH_SAMPLE_PATH.exists():
         return []
     records = json.loads(GRAPH_SAMPLE_PATH.read_text(encoding="utf-8"))
@@ -37,7 +37,8 @@ def query_neo4j_related_parties(
     company_name: str,
     settings: ProjectSettings | None = None,
 ) -> list[dict[str, Any]]:
-    """Query Neo4j when configured; return an empty list when unavailable."""
+    """Neo4j 查询入口；不可用时返回空列表交给上层 fallback。"""
+    # 实际查询统一委托给 graph_store，避免知识层和写入层维护两份 Cypher。
     return query_graph_related_parties(company_name, settings=settings)
 
     settings = settings or ProjectSettings.from_env()
@@ -84,7 +85,7 @@ def query_neo4j_related_parties(
 
 
 def retrieve_related_parties(company_name: str) -> list[dict[str, Any]]:
-    """Use Neo4j when available, otherwise use local JSON fallback."""
+    """优先用 Neo4j 检索关联方，失败或无结果时使用本地 JSON 样例。"""
     neo4j_records = query_graph_related_parties(company_name)
     if neo4j_records:
         return neo4j_records
@@ -99,18 +100,20 @@ def retrieve_audit_standards(
     limit: int = 3,
     vector_store_path: Path | str = DEFAULT_VECTOR_STORE_PATH,
 ) -> list[dict[str, Any]]:
-    """Retrieve audit standards from the Chroma vector DB, then keyword fallback."""
+    """优先从本地向量库检索审计准则，再降级为关键词匹配。"""
     if not AUDIT_STANDARD_PATH.exists():
         return []
 
     query_text = " ".join(query_terms)
     try:
+        # ensure_built 让首次查询自动创建索引，演示环境不需要单独预热。
         store = LocalVectorStore(store_path=vector_store_path)
         store.ensure_built(AUDIT_STANDARD_PATH)
         vector_results = store.search(query_text, limit=limit)
         if vector_results:
             return vector_results
     except Exception:
+        # 向量库不可用时保持服务可用，下面的关键词检索至少能返回可解释依据。
         pass
 
     standards = json.loads(AUDIT_STANDARD_PATH.read_text(encoding="utf-8"))

@@ -14,6 +14,7 @@ from ..settings import ProjectSettings
 from .workflow import run_demo
 
 SUPPORTED_DOCUMENT_SUFFIXES = {".txt", ".pdf", ".docx", ".xlsx", ".xls", ".csv"}
+# 系统允许进入审计链路的材料格式白名单。
 
 
 def execute_audit(
@@ -31,6 +32,8 @@ def execute_audit(
     normalized_path = validate_document_path(document_path)
     security_result = inspect_document_security(normalized_path)
 
+    # 安全检查是工作流前置闸门：一旦命中高风险提示注入，就不再解析材料、
+    # 调用模型或发送自动化通知，避免恶意内容进入后续推理链路。
     if security_result["blocked"]:
         return {
             "request_id": request_id or uuid4().hex,
@@ -49,6 +52,7 @@ def execute_audit(
             "security_flags": security_result,
         }
 
+    # 工作流只产出内部状态；服务层负责转换成 API、Streamlit 和 CLI 都能复用的结果。
     workflow_state = run_demo(str(normalized_path))
     warnings = collect_warnings(workflow_state, security_result)
     report = build_full_report_markdown(workflow_state)
@@ -69,6 +73,7 @@ def execute_audit(
         "security_flags": security_result,
     }
     if save_report:
+        # 报告落盘是可选副作用，默认接口调用只返回内存中的 Markdown 和结构化字段。
         result["report_paths"] = save_reports(workflow_state, output_dir=output_dir)
     return result
 
@@ -94,6 +99,7 @@ def save_uploaded_document(
     if suffix not in SUPPORTED_DOCUMENT_SUFFIXES:
         raise ValueError(f"Unsupported file type: {suffix or '<none>'}")
 
+    # 上传文件保留原文件名作为后缀信息来源，UUID 前缀用于隔离同名上传。
     target_dir = Path(raw_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
     target_path = target_dir / f"{uuid4().hex}_{Path(filename).name}"
@@ -124,6 +130,7 @@ def rebuild_rag_index() -> dict[str, Any]:
 def build_config_status(settings: ProjectSettings | None = None) -> dict[str, Any]:
     """汇总外部依赖配置状态，用于健康检查和演示页展示。"""
     current = settings or ProjectSettings.from_env()
+    # 示例密码代表“尚未真实配置”，避免健康检查误把模板值当作可用 Neo4j。
     neo4j_configured = bool(current.neo4j_uri and current.neo4j_password != "password")
     return {
         "deepseek_configured": bool(current.deepseek_api_key and current.audit_llm_model),
@@ -146,6 +153,7 @@ def collect_warnings(workflow_state: dict[str, Any], security_result: dict[str, 
     """根据工作流输出和安全检查结果生成可读告警列表。"""
     warnings: list[str] = []
     parsed = workflow_state.get("parsed_financial_data", {})
+    # 告警只提示“结果可信度/完整性”问题，不改变审计结果本身。
     if workflow_state.get("error_message"):
         warnings.append(str(workflow_state["error_message"]))
     if parsed and not parsed.get("extraction_complete", True):

@@ -7,12 +7,14 @@ from ..settings import ProjectSettings
 
 
 REQUIRED_RISK_FIELDS = {"risk_type", "severity", "evidence", "audit_basis", "recommendation"}
+# 下游报告、协商和 API 共同依赖的风险项最小字段集合。
 
 
 def create_deepseek_audit_agent(settings: ProjectSettings | None = None):
-    """Create a LangChain 1.x agent backed by DeepSeek's OpenAI-compatible API."""
+    """创建基于 DeepSeek OpenAI-compatible API 的 LangChain 1.x Agent。"""
     settings = settings or ProjectSettings.from_env()
     if not settings.deepseek_api_key or not settings.audit_llm_model:
+        # 没有模型配置时返回 None，让核心节点自然降级到 DeepSeek 直连或本地规则。
         return None
 
     try:
@@ -92,7 +94,7 @@ def run_langchain_audit_agent(
     agent_executor: Any | None = None,
     settings: ProjectSettings | None = None,
 ) -> list[dict[str, Any]] | None:
-    """Run the LangChain Agent and return validated audit risks."""
+    """运行 LangChain Agent，并只返回通过字段校验的风险项。"""
     agent = agent_executor if agent_executor is not None else create_deepseek_audit_agent(settings)
     if agent is None:
         return None

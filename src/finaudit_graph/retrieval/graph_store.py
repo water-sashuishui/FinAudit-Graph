@@ -41,7 +41,7 @@ class GraphCandidates:
 
 
 def extract_graph_candidates(parsed: dict[str, Any]) -> GraphCandidates:
-    """Extract deterministic graph candidates from parsed audit data."""
+    """从解析结果中抽取可写入图数据库的确定性节点和关系候选。"""
     company_name = str(parsed.get("company_name") or "").strip()
     if not company_name:
         return GraphCandidates(nodes=[], relationships=[])
@@ -57,6 +57,8 @@ def extract_graph_candidates(parsed: dict[str, Any]) -> GraphCandidates:
     }
     relationships: list[GraphRelationship] = []
 
+    # 图谱抽取保持规则化和可解释：只从原文片段/关键线索里抽候选企业，
+    # 再根据附近语境判断关系类型，避免生成无法追溯证据的图边。
     for target in _company_names(text):
         if target == company_name:
             continue
@@ -76,6 +78,7 @@ def extract_graph_candidates(parsed: dict[str, Any]) -> GraphCandidates:
         )
 
     for person in _person_names(text):
+        # “张某/李某”这类匿名人名只有出现在控制、股东等上下文里才写入图谱。
         if _has_any(text, ["控制人", "实际控制人", "控股", "股东"]):
             nodes.setdefault(("Person", person), GraphNode(label="Person", name=person, properties={}))
             relationships.append(
@@ -125,6 +128,7 @@ def ingest_parsed_graph(
     """Persist extracted graph candidates into Neo4j when configured."""
     current = settings or ProjectSettings.from_env()
     if not neo4j_is_configured(current):
+        # 未配置 Neo4j 时跳过写入，但不阻断审计主流程；知识层会继续使用 JSON fallback。
         return graph_status("skipped", configured=False, available=False)
 
     candidates = extract_graph_candidates(parsed)
@@ -137,6 +141,7 @@ def ingest_parsed_graph(
         driver = factory(current)
         driver.verify_connectivity()
         with driver.session() as session:
+            # 约束和 MERGE 都是幂等操作，允许同一材料多次演示运行而不重复造点。
             ensure_graph_constraints(session)
             records_written = write_graph_candidates(session, candidates)
         return graph_status(
@@ -248,6 +253,7 @@ def _write_relationship(session: Any, relationship: GraphRelationship) -> None:
 def _relationship_query(relationship: GraphRelationship) -> str:
     target_pattern = "(target:Person {name: $target_name})" if relationship.target_label == "Person" else "(target:Company {name: $target_name})"
     relation_type = relationship.type
+    # relation_type 来自内部白名单规则，不接受外部输入，避免拼接 Cypher 类型时引入注入面。
     return f"""
     MERGE (source:Company {{name: $source_name}})
     MERGE {target_pattern}
@@ -267,6 +273,8 @@ def query_graph_related_parties(
         return []
 
     driver = None
+    # 查询 1 到 3 跳关系，并要求路径中至少有隐藏关系、比例阈值或置信度阈值命中，
+    # 这样可以过滤掉普通供应链关系，只返回需要审计关注的穿透线索。
     cypher_query = """
     MATCH path = (c:Company {name: $company_name})-[r:CONTROLLED_BY|PURCHASES_FROM|SUPPLIES|HAS_RECEIVABLE_FROM|RELATED_TO*1..3]-(p)
     WHERE p <> c
@@ -342,6 +350,7 @@ def _relationship(
     text: str,
     source_file: str,
 ) -> GraphRelationship:
+    # 图边属性保留证据窗口、隐藏标记和置信度，后续报告和答辩可以解释每条边的来源。
     properties: dict[str, Any] = {
         "evidence": _evidence_window(text, target_name),
         "hidden": relation_type in {"RELATED_TO", "CONTROLLED_BY"},

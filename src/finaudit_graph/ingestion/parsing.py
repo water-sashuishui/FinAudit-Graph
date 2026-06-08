@@ -22,6 +22,8 @@ DEMO_PARSED_FINANCIAL_DATA: dict[str, Any] = {
     ],
 }
 
+# 字段别名表是解析层的“领域词典”：真实财务材料里的表头不稳定，
+# 后续文本正则和表格语义对齐都会复用这里的别名。
 FIELD_ALIASES: dict[str, list[str]] = {
     "company_name": ["被审计企业", "被审计单位", "企业名称", "公司名称", "单位名称", "公司"],
     "reporting_year": ["报告年度", "会计年度", "年度", "年份", "报告年份"],
@@ -70,7 +72,7 @@ SPREADSHEET_SUFFIXES = {".csv", ".xlsx", ".xls"}
 
 
 def read_document_text(path: str | Path) -> str:
-    """Extract text from txt, pdf, docx, csv, or xlsx files."""
+    """从 txt、pdf、docx、csv、xlsx 等材料中抽取统一文本视图。"""
     document_path = Path(path)
     if not document_path.exists():
         return ""
@@ -179,6 +181,8 @@ def _read_xlsx_cells(path: Path) -> list[dict[str, Any]]:
     cells: list[dict[str, Any]] = []
     try:
         with zipfile.ZipFile(path) as archive:
+            # 直接解析 OpenXML 结构可以让测试和演示环境少依赖 openpyxl；
+            # sharedStrings 与 inlineStr 两种 Excel 字符串存储方式都需要兼容。
             shared_strings = _read_shared_strings(archive)
             sheet_names = _read_workbook_sheet_names(archive)
             sheet_paths = sorted(
@@ -321,6 +325,8 @@ def analyze_financial_statement_tables(cells: list[dict[str, Any]]) -> tuple[dic
     """从多 sheet 财务报表中识别本期/上期金额，并计算关键风险指标。"""
     parsed: dict[str, Any] = {}
     evidence: dict[str, Any] = {}
+    # 真实报表通常按 sheet/row 分布项目和金额列；先按工作表与行聚合，
+    # 再寻找“本期/上期”表头，可以覆盖利润表、现金流量表和资产负债表。
     rows_by_sheet: dict[str, dict[int, list[dict[str, Any]]]] = {}
     for cell in cells:
         rows_by_sheet.setdefault(cell["sheet"], {}).setdefault(cell["row"], []).append(cell)
@@ -527,6 +533,8 @@ def extract_value_for_field(field: str, raw_value: str) -> Any | None:
 
 def empty_parse_result(document_path: Path, text: str = "") -> dict[str, Any]:
     """创建不会伪装成 demo 成功结果的解析骨架。"""
+    # 解析失败时显式返回 None 和 extraction_complete=False，避免下游把 demo
+    # 默认值当成真实上传材料的审计结果。
     return {
         "company_name": None,
         "reporting_year": None,
@@ -575,7 +583,7 @@ def build_key_clues(parsed: dict[str, Any]) -> list[str]:
 
 
 def parse_financial_document(path: str | Path) -> dict[str, Any]:
-    """Parse key audit fields from a source document without masking failures."""
+    """从审计材料中提取核心财务字段，并保留失败/缺失证据。"""
     document_path = Path(path)
     suffix = document_path.suffix.lower()
     cells: list[dict[str, Any]] = []
@@ -609,6 +617,7 @@ def parse_financial_document(path: str | Path) -> dict[str, Any]:
     else:
         parsed["extraction_method"] = "text_regex"
 
+    # 最后再跑一遍文本级兜底提取：表格展开文本、PDF/DOCX/TXT 都能复用这组规则。
     parsed["company_name"] = _extract_company(text) or parsed["company_name"]
     parsed["reporting_year"] = _extract_year(text) or parsed["reporting_year"]
     parsed["revenue_growth_rate"] = _extract_percent(text, ["收入增长率", "营业收入增长率"]) or parsed.get(
